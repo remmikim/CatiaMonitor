@@ -1,43 +1,44 @@
 ﻿using Microsoft.Data.Sqlite;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 
 namespace CatiaMonitor.Server
 {
     /// <summary>
+    /// Represents the summary status of a client for the web dashboard.
+    /// 웹 대시보드에 표시될 클라이언트 상태 요약 정보 모델입니다.
+    /// </summary>
+    public class ClientStatusSummary
+    {
+        public int ClientId { get; set; }
+        public string IpAddress { get; set; } = string.Empty;
+        public string LastSeen { get; set; } = string.Empty;
+        public bool IsCatiaRunning { get; set; }
+        public string LastLogTime { get; set; } = string.Empty;
+    }
+
+    /// <summary>
     /// Manages all database operations using SQLite.
     /// SQLite를 사용하여 모든 데이터베이스 작업을 관리합니다.
-    /// This class must be public to be accessible by ClientHandler.
-    /// ClientHandler에서 접근할 수 있도록 이 클래스는 public이어야 합니다.
     /// </summary>
     public class DatabaseManager
     {
         private readonly string _connectionString;
 
-        /// <summary>
-        /// Initializes a new instance of the DatabaseManager class.
-        /// DatabaseManager 클래스의 새 인스턴스를 초기화합니다.
-        /// </summary>
-        /// <param name="dbFileName">The name of the SQLite database file. SQLite 데이터베이스 파일의 이름입니다.</param>
         public DatabaseManager(string dbFileName = "catia_monitor.db")
         {
-            // 데이터베이스 파일이 프로그램 실행 폴더에 생성되도록 경로를 설정합니다.
             string dbPath = Path.Combine(AppContext.BaseDirectory, dbFileName);
             _connectionString = $"Data Source={dbPath}";
         }
 
-        /// <summary>
-        /// Initializes the database by creating necessary tables if they don't exist.
-        /// 필요한 테이블이 없는 경우 생성하여 데이터베이스를 초기화합니다.
-        /// </summary>
         public async Task InitializeDatabaseAsync()
         {
             using (var connection = new SqliteConnection(_connectionString))
             {
                 await connection.OpenAsync();
 
-                // Clients 테이블 생성 SQL
                 var createClientsTable = @"
                     CREATE TABLE IF NOT EXISTS Clients (
                         ClientId    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,11 +47,8 @@ namespace CatiaMonitor.Server
                     );";
 
                 using (var command = new SqliteCommand(createClientsTable, connection))
-                {
                     await command.ExecuteNonQueryAsync();
-                }
 
-                // UsageLogs 테이블 생성 SQL
                 var createUsageLogsTable = @"
                     CREATE TABLE IF NOT EXISTS UsageLogs (
                         LogId           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,36 +59,28 @@ namespace CatiaMonitor.Server
                     );";
 
                 using (var command = new SqliteCommand(createUsageLogsTable, connection))
-                {
                     await command.ExecuteNonQueryAsync();
-                }
             }
             Console.WriteLine("[Database] Database initialized successfully.");
         }
 
-        /// <summary>
-        /// Ensures a client exists in the database. If not, creates a new entry. Updates LastSeen time.
-        /// 클라이언트가 데이터베이스에 존재하는지 확인합니다. 없으면 새 항목을 만들고, 있으면 LastSeen 시간을 업데이트합니다.
-        /// </summary>
-        /// <param name="ipAddress">The IP address of the client. 클라이언트의 IP 주소입니다.</param>
-        /// <returns>The ID of the client. 클라이언트의 ID를 반환합니다.</returns>
         public async Task<int> EnsureClientExists(string ipAddress)
         {
             using (var connection = new SqliteConnection(_connectionString))
             {
                 await connection.OpenAsync();
 
-                // 먼저 해당 IP의 클라이언트가 있는지 확인합니다.
                 var selectCmd = new SqliteCommand("SELECT ClientId FROM Clients WHERE IpAddress = @ip", connection);
                 selectCmd.Parameters.AddWithValue("@ip", ipAddress);
 
                 var clientId = await selectCmd.ExecuteScalarAsync();
+                string currentTime = DateTime.UtcNow.ToString("o"); // ISO 8601 format
 
                 if (clientId != null)
                 {
                     // 클라이언트가 존재하면 LastSeen 시간만 업데이트합니다.
                     var updateCmd = new SqliteCommand("UPDATE Clients SET LastSeen = @time WHERE ClientId = @id", connection);
-                    updateCmd.Parameters.AddWithValue("@time", DateTime.UtcNow.ToString("o")); // ISO 8601 format
+                    updateCmd.Parameters.AddWithValue("@time", currentTime);
                     updateCmd.Parameters.AddWithValue("@id", Convert.ToInt32(clientId));
                     await updateCmd.ExecuteNonQueryAsync();
                     return Convert.ToInt32(clientId);
@@ -100,34 +90,83 @@ namespace CatiaMonitor.Server
                     // 클라이언트가 없으면 새로 추가합니다.
                     var insertCmd = new SqliteCommand("INSERT INTO Clients (IpAddress, LastSeen) VALUES (@ip, @time); SELECT last_insert_rowid();", connection);
                     insertCmd.Parameters.AddWithValue("@ip", ipAddress);
-                    insertCmd.Parameters.AddWithValue("@time", DateTime.UtcNow.ToString("o"));
+                    insertCmd.Parameters.AddWithValue("@time", currentTime);
 
-                    // 새로 추가된 행의 ID를 반환받습니다.
                     var newClientId = await insertCmd.ExecuteScalarAsync();
                     return Convert.ToInt32(newClientId);
                 }
             }
         }
 
-        /// <summary>
-        /// Logs the CATIA usage status for a specific client.
-        /// 특정 클라이언트의 CATIA 사용 상태를 기록합니다.
-        /// </summary>
-        /// <param name="clientId">The ID of the client. 클라이언트의 ID입니다.</param>
-        /// <param name="isCatiaRunning">The running status of CATIA. CATIA의 실행 상태입니다.</param>
         public async Task LogUsage(int clientId, bool isCatiaRunning)
         {
             using (var connection = new SqliteConnection(_connectionString))
             {
                 await connection.OpenAsync();
+                string currentTime = DateTime.UtcNow.ToString("o");
 
-                var insertCmd = new SqliteCommand("INSERT INTO UsageLogs (ClientId, Timestamp, IsCatiaRunning) VALUES (@id, @time, @status)", connection);
-                insertCmd.Parameters.AddWithValue("@id", clientId);
-                insertCmd.Parameters.AddWithValue("@time", DateTime.UtcNow.ToString("o"));
-                insertCmd.Parameters.AddWithValue("@status", isCatiaRunning ? 1 : 0); // bool을 integer로 변환 (True=1, False=0)
+                // 클라이언트 테이블의 LastSeen도 함께 업데이트하여 마지막 통신 시간을 기록합니다.
+                var updateClientCmd = new SqliteCommand("UPDATE Clients SET LastSeen = @time WHERE ClientId = @id", connection);
+                updateClientCmd.Parameters.AddWithValue("@time", currentTime);
+                updateClientCmd.Parameters.AddWithValue("@id", clientId);
+                await updateClientCmd.ExecuteNonQueryAsync();
 
-                await insertCmd.ExecuteNonQueryAsync();
+                // 새로운 사용 상태를 로그에 기록합니다.
+                var insertLogCmd = new SqliteCommand("INSERT INTO UsageLogs (ClientId, Timestamp, IsCatiaRunning) VALUES (@id, @time, @status)", connection);
+                insertLogCmd.Parameters.AddWithValue("@id", clientId);
+                insertLogCmd.Parameters.AddWithValue("@time", currentTime);
+                insertLogCmd.Parameters.AddWithValue("@status", isCatiaRunning ? 1 : 0); // bool을 integer로 변환
+
+                await insertLogCmd.ExecuteNonQueryAsync();
             }
+        }
+
+        /// <summary>
+        /// (신규) 웹 대시보드를 위해 모든 클라이언트의 최신 상태를 조회합니다.
+        /// Gets the latest status summary for all clients for the web dashboard.
+        /// </summary>
+        /// <returns>A list of client status summaries. 클라이언트 상태 요약 정보 리스트를 반환합니다.</returns>
+        public async Task<List<ClientStatusSummary>> GetClientStatusSummaryAsync()
+        {
+            var summaryList = new List<ClientStatusSummary>();
+            using (var connection = new SqliteConnection(_connectionString))
+            {
+                await connection.OpenAsync();
+                // 각 ClientId 별로 가장 최근의 LogId를 찾는 서브쿼리를 사용하여
+                // 클라이언트 정보와 최신 로그를 조합(LEFT JOIN)합니다.
+                var commandText = @"
+                    SELECT 
+                        c.ClientId, 
+                        c.IpAddress, 
+                        c.LastSeen, 
+                        ul.IsCatiaRunning, 
+                        ul.Timestamp as LastLogTime
+                    FROM Clients c
+                    LEFT JOIN UsageLogs ul ON ul.LogId = (
+                        SELECT MAX(LogId) 
+                        FROM UsageLogs 
+                        WHERE ClientId = c.ClientId
+                    )
+                    ORDER BY c.IpAddress";
+
+                var command = new SqliteCommand(commandText, connection);
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        summaryList.Add(new ClientStatusSummary
+                        {
+                            ClientId = reader.GetInt32(0),
+                            IpAddress = reader.GetString(1),
+                            LastSeen = reader.GetString(2),
+                            // 로그가 하나도 없는 클라이언트의 경우를 대비하여 Null 체크를 합니다.
+                            IsCatiaRunning = !reader.IsDBNull(3) && reader.GetInt32(3) == 1,
+                            LastLogTime = !reader.IsDBNull(4) ? reader.GetString(4) : "N/A"
+                        });
+                    }
+                }
+            }
+            return summaryList;
         }
     }
 }

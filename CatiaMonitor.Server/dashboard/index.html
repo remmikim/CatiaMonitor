@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CATIA Monitor Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 추가적인 커스텀 스타일 */
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .status-running {
+            background-color: #22c55e;
+        }
+        /* green-500 */
+        .status-stopped {
+            background-color: #ef4444;
+            animation: none;
+        }
+        /* red-500 */
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">CATIA Monitor Dashboard</h1>
+            <p class="text-gray-600">클라이언트 PC의 CATIA 실행 상태를 실시간으로 확인합니다.</p>
+        </header>
+
+        <main>
+            <div class="bg-white shadow-md rounded-lg overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-50 border-b-2 border-gray-200">
+                            <tr>
+                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">상태</th>
+                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">IP 주소</th>
+                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">최종 업데이트 (로그)</th>
+                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">마지막 연결</th>
+                            </tr>
+                        </thead>
+                        <tbody id="status-table-body" class="divide-y divide-gray-200">
+                            <!-- JavaScript로 데이터가 채워질 부분 -->
+                            <tr>
+                                <td colspan="4" class="p-8 text-center text-gray-500">
+                                    <div class="flex justify-center items-center space-x-2">
+                                        <svg class="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span>데이터를 불러오는 중입니다...</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <footer class="text-center mt-6 text-sm text-gray-500">
+                <p>5초마다 자동 갱신됩니다. 마지막 업데이트: <span id="last-updated" class="font-semibold">N/A</span></p>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        const tableBody = document.getElementById('status-table-body');
+        const lastUpdatedSpan = document.getElementById('last-updated');
+
+        // UTC 시간을 현지 시간 문자열로 예쁘게 변환하는 함수
+        function formatDateTime(utcString) {
+            if (utcString === 'N/A' || !utcString) return 'N/A';
+            try {
+                const date = new Date(utcString);
+                if (isNaN(date.getTime())) return utcString;
+                return date.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+            } catch (e) {
+                return utcString;
+            }
+        }
+
+        async function fetchAndUpdateStatus() {
+            // API의 전체 URL을 동적으로 생성하여 상대 경로 문제를 해결합니다.
+            const apiUrl = `${window.location.protocol}//${window.location.host}/api/status`;
+
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const clients = await response.json();
+
+                tableBody.innerHTML = ''; // 테이블 비우기
+
+                if (clients.length === 0) {
+                     tableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-gray-500">연결된 클라이언트가 없습니다.</td></tr>`;
+                } else {
+                    clients.forEach(client => {
+                        const row = document.createElement('tr');
+
+                        const statusClass = client.isCatiaRunning ? 'status-running' : 'status-stopped';
+                        const statusText = client.isCatiaRunning ? '실행 중' : '중지됨';
+
+                        row.innerHTML = `
+                            <td class="p-4 whitespace-nowrap">
+                                <div class="flex items-center">
+                                    <span class="status-dot ${statusClass}"></span>
+                                    <span class="font-medium text-gray-900">${statusText}</span>
+                                </div>
+                            </td>
+                            <td class="p-4 whitespace-nowrap text-gray-800 font-mono">${client.ipAddress}</td>
+                            <td class="p-4 whitespace-nowrap text-gray-600 font-mono">${formatDateTime(client.lastLogTime)}</td>
+                            <td class="p-4 whitespace-nowrap text-gray-600 font-mono">${formatDateTime(client.lastSeen)}</td>
+                        `;
+                        tableBody.appendChild(row);
+                    });
+                }
+                lastUpdatedSpan.textContent = new Date().toLocaleTimeString('ko-KR');
+
+            } catch (error) {
+                console.error("Failed to fetch status:", error);
+                tableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-red-500">데이터를 불러오는 데 실패했습니다. 서버가 실행 중인지, 방화벽 설정을 확인하세요.</td></tr>`;
+            }
+        }
+
+        // 5초마다 상태를 업데이트하고, 페이지 로드 시 즉시 한 번 실행
+        setInterval(fetchAndUpdateStatus, 5000);
+        document.addEventListener('DOMContentLoaded', fetchAndUpdateStatus);
+    </script>
+</body>
+</html>
