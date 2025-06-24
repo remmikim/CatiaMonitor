@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace CatiaMonitor.Client
 {
     public class Program
-    {
+    { 
         // --- 설정 ---
         // 실제 운영 시에는 설정 파일(예: appsettings.json)에서 읽어오는 것이 좋습니다.
         private const string ServerIpAddress = "127.0.0.1"; // 서버의 IP 주소 (localhost 테스트용)
