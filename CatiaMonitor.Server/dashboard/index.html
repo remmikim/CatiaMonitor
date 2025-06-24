@@ -7,7 +7,7 @@
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Ãß°¡ÀûÀÎ Ä¿½ºÅÒ ½ºÅ¸ÀÏ */
+        /*ì¶”ê°€ì ì¸ ì»¤ìŠ¤í…€ */
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
         body {
@@ -48,7 +48,7 @@
     <div class="container mx-auto p-4 md:p-8">
         <header class="mb-8">
             <h1 class="text-3xl font-bold text-gray-800">CATIA Monitor Dashboard</h1>
-            <p class="text-gray-600">Å¬¶óÀÌ¾ğÆ® PCÀÇ CATIA ½ÇÇà »óÅÂ¸¦ ½Ç½Ã°£À¸·Î È®ÀÎÇÕ´Ï´Ù.</p>
+            <p class="text-gray-600">í´ë¼ì´ì–¸íŠ¸ PCì˜ ì¹´í‹°ì•„ ì‹¤í–‰ ìƒíƒœë¥¼ ì‹¤ì‹œê°„ìœ¼ë¡œ í™•ì¸í•©ë‹ˆë‹¤.</p>
         </header>
 
         <main>
@@ -57,14 +57,14 @@
                     <table class="w-full text-left">
                         <thead class="bg-gray-50 border-b-2 border-gray-200">
                             <tr>
-                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">»óÅÂ</th>
-                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">IP ÁÖ¼Ò</th>
-                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">ÃÖÁ¾ ¾÷µ¥ÀÌÆ® (·Î±×)</th>
-                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">¸¶Áö¸· ¿¬°á</th>
+                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider"> ìƒíƒœ</th>
+                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">IP ì£¼ì†Œ</th>
+                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">ìµœì¢… ì—…ë°ì´íŠ¸(ë¡œê·¸)</th>
+                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">ë§ˆì§€ë§‰ ì—°ê²° ì‹œê°</th>
                             </tr>
                         </thead>
                         <tbody id="status-table-body" class="divide-y divide-gray-200">
-                            <!-- JavaScript·Î µ¥ÀÌÅÍ°¡ Ã¤¿öÁú ºÎºĞ -->
+                            <!-- JavaScriptï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Í°ï¿½ Ã¤ï¿½ï¿½ï¿½ï¿½ ï¿½Îºï¿½ -->
                             <tr>
                                 <td colspan="4" class="p-8 text-center text-gray-500">
                                     <div class="flex justify-center items-center space-x-2">
@@ -72,7 +72,7 @@
                                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
-                                        <span>µ¥ÀÌÅÍ¸¦ ºÒ·¯¿À´Â ÁßÀÔ´Ï´Ù...</span>
+                                        <span>ë°ì´í„°ë¥¼ ë¶ˆëŸ¬ì˜¤ëŠ” ì¤‘ì…ë‹ˆë‹¤...</span>
                                     </div>
                                 </td>
                             </tr>
@@ -81,7 +81,7 @@
                 </div>
             </div>
             <footer class="text-center mt-6 text-sm text-gray-500">
-                <p>5ÃÊ¸¶´Ù ÀÚµ¿ °»½ÅµË´Ï´Ù. ¸¶Áö¸· ¾÷µ¥ÀÌÆ®: <span id="last-updated" class="font-semibold">N/A</span></p>
+                <p>5ì´ˆë§ˆë‹¤ ìë™ìœ¼ë¡œ ê°±ì‹ ë©ë‹ˆë‹¤. ë§ˆì§€ë§‰ ì—…ë°ì´íŠ¸: <span id="last-updated" class="font-semibold">N/A</span></p>
             </footer>
         </main>
     </div>
@@ -90,7 +90,7 @@
         const tableBody = document.getElementById('status-table-body');
         const lastUpdatedSpan = document.getElementById('last-updated');
 
-        // UTC ½Ã°£À» ÇöÁö ½Ã°£ ¹®ÀÚ¿­·Î ¿¹»Ú°Ô º¯È¯ÇÏ´Â ÇÔ¼ö
+        // UTC ï¿½Ã°ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ã°ï¿½ ï¿½ï¿½ï¿½Ú¿ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Ú°ï¿½ ï¿½ï¿½È¯ï¿½Ï´ï¿½ ï¿½Ô¼ï¿½
         function formatDateTime(utcString) {
             if (utcString === 'N/A' || !utcString) return 'N/A';
             try {
@@ -103,7 +103,7 @@
         }
 
         async function fetchAndUpdateStatus() {
-            // APIÀÇ ÀüÃ¼ URLÀ» µ¿ÀûÀ¸·Î »ı¼ºÇÏ¿© »ó´ë °æ·Î ¹®Á¦¸¦ ÇØ°áÇÕ´Ï´Ù.
+            // APIï¿½ï¿½ ï¿½ï¿½Ã¼ URLï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Ï¿ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Ø°ï¿½ï¿½Õ´Ï´ï¿½.
             const apiUrl = `${window.location.protocol}//${window.location.host}/api/status`;
 
             try {
@@ -113,16 +113,16 @@
                 }
                 const clients = await response.json();
 
-                tableBody.innerHTML = ''; // Å×ÀÌºí ºñ¿ì±â
+                tableBody.innerHTML = ''; // ï¿½ï¿½ï¿½Ìºï¿½ ï¿½ï¿½ï¿½ï¿½
 
                 if (clients.length === 0) {
-                     tableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-gray-500">¿¬°áµÈ Å¬¶óÀÌ¾ğÆ®°¡ ¾ø½À´Ï´Ù.</td></tr>`;
+                     tableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-gray-500">ì—°ê²°ëœ í´ë¼ì´ì–¸íŠ¸ê°€ ì—†ìŠµë‹ˆë‹¤.</td></tr>`;
                 } else {
                     clients.forEach(client => {
                         const row = document.createElement('tr');
 
                         const statusClass = client.isCatiaRunning ? 'status-running' : 'status-stopped';
-                        const statusText = client.isCatiaRunning ? '½ÇÇà Áß' : 'ÁßÁöµÊ';
+                        const statusText = client.isCatiaRunning ? 'ì˜¨ë¼ì¸' : 'ì˜¤í”„ë¼ì¸';
 
                         row.innerHTML = `
                             <td class="p-4 whitespace-nowrap">
@@ -142,11 +142,11 @@
 
             } catch (error) {
                 console.error("Failed to fetch status:", error);
-                tableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-red-500">µ¥ÀÌÅÍ¸¦ ºÒ·¯¿À´Â µ¥ ½ÇÆĞÇß½À´Ï´Ù. ¼­¹ö°¡ ½ÇÇà ÁßÀÎÁö, ¹æÈ­º® ¼³Á¤À» È®ÀÎÇÏ¼¼¿ä.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-red-500">ë°ì´í„°ë¥¼ ë¶ˆëŸ¬ì˜¤ëŠ”ë° ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤. ì„œë²„ê°€ ì‹¤í–‰ ì¤‘ì¸ì§€, ë°©í™”ë²½ì„ í™•ì¸í•˜ì„¸ìš”.</td></tr>`;
             }
         }
 
-        // 5ÃÊ¸¶´Ù »óÅÂ¸¦ ¾÷µ¥ÀÌÆ®ÇÏ°í, ÆäÀÌÁö ·Îµå ½Ã Áï½Ã ÇÑ ¹ø ½ÇÇà
+        // 5ï¿½Ê¸ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Â¸ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ®ï¿½Ï°ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Îµï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½
         setInterval(fetchAndUpdateStatus, 5000);
         document.addEventListener('DOMContentLoaded', fetchAndUpdateStatus);
     </script>
