@@ -23,10 +23,8 @@ namespace CatiaMonitor.Client
                         return;
                     }
 
-                    // <<★★★ 수정된 부분 ★★★>>
-                    // 실행 경로 뒤에 /background 인자를 추가하여 최소화 상태로 시작하도록 합니다.
+                    // ★★★ 실행 경로 뒤에 /background 인자를 추가하여 최소화 상태로 시작하도록 합니다 ★★★
                     string currentPath = $"\"{ExecutablePath}\" /background";
-                    // <<★★★ 수정 완료 ★★★>>
 
                     Console.WriteLine($"[AutoStart] Registering path in registry: {currentPath}");
                     startupKey.SetValue(AppName, currentPath);

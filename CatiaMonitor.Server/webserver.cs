@@ -4,47 +4,45 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Collections.Concurrent;
 
 namespace CatiaMonitor.Server
 {
-    /// <summary>
-    /// Handles HTTP requests to serve the web dashboard and API data.
-    /// 웹 대시보드 및 API 데이터를 제공하기 위한 HTTP 요청을 처리합니다.
-    /// </summary>
     public class WebServer
     {
-        private readonly HttpListener _listener = new HttpListener();
+        private readonly HttpListener _listener;
         private readonly DatabaseManager _dbManager;
-        private readonly string _dashboardHtmlPath = Path.Combine(AppContext.BaseDirectory, "dashboard", "index.html");
+        private readonly ConcurrentDictionary<int, ClientHandler> _activeClients;
 
-        public WebServer(DatabaseManager dbManager, string url = "http://+:8080/")
+        public WebServer(string url, DatabaseManager dbManager, ConcurrentDictionary<int, ClientHandler> activeClients)
         {
-            _dbManager = dbManager;
+            _listener = new HttpListener();
             _listener.Prefixes.Add(url);
+            _dbManager = dbManager;
+            _activeClients = activeClients;
         }
 
-        public async Task Start()
+        public async Task Run()
         {
-            try
-            {
-                _listener.Start();
-                Console.WriteLine($"[Web Server] Started. Listening for requests on the specified URL.");
-                Console.WriteLine($"[Web Server] Access the dashboard at http://localhost:8080 or http://<your-server-ip>:8080");
+            _listener.Start();
+            Console.WriteLine($"[Web Server] Started. Listening on {_listener.Prefixes.First()}");
 
-                while (true)
+            while (true)
+            {
+                try
                 {
                     var context = await _listener.GetContextAsync();
-                    _ = Task.Run(() => ProcessRequestAsync(context));
+                    await ProcessRequestAsync(context);
                 }
-            }
-            catch (HttpListenerException ex)
-            {
-                Console.WriteLine($"[Web Server] Critical error: {ex.Message}");
-                Console.WriteLine("[Web Server] Tip: Try running the application as an administrator, or check if another program is using port 8080.");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Web Server] An unexpected error occurred: {ex.Message}");
+                catch (HttpListenerException ex) when (ex.ErrorCode == 995)
+                {
+                    Console.WriteLine("[Web Server] Listener is shutting down.");
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Web Server] Error processing request: {ex.Message}");
+                }
             }
         }
 
@@ -55,67 +53,120 @@ namespace CatiaMonitor.Server
 
             try
             {
-                Console.WriteLine($"[Web Server] Request received: {request.HttpMethod} {request.Url?.AbsolutePath}");
-
-                string responseString = "";
-                string contentType = "text/plain; charset=utf-8";
-                byte[] buffer;
-
-                switch (request.Url?.AbsolutePath.ToLower())
+                switch (request.Url?.AbsolutePath)
                 {
-                    case "/":
-                    case "/index.html":
-                        if (File.Exists(_dashboardHtmlPath))
+                    case "/api/status":
+                        await HandleStatusRequest(response);
+                        break;
+                    // ★★★ '/api/shutdown' 경로에 대한 처리 ★★★
+                    case "/api/shutdown":
+                        if (request.HttpMethod == "POST")
                         {
-                            responseString = await File.ReadAllTextAsync(_dashboardHtmlPath);
-                            contentType = "text/html; charset=utf-8";
+                            await HandleShutdownRequest(request, response);
                         }
                         else
                         {
-                            response.StatusCode = (int)HttpStatusCode.NotFound;
-                            responseString = $"Error 404: Dashboard file not found at '{_dashboardHtmlPath}'.";
+                            SendResponse(response, HttpStatusCode.MethodNotAllowed);
                         }
                         break;
-
-                    case "/api/status":
-                        var statuses = await _dbManager.GetClientStatusSummaryAsync();
-
-                        // <<★★★ 수정된 부분 ★★★>>
-                        // JavaScript에서 사용하는 camelCase(예: ipAddress)로 속성 이름을 변환하는 옵션을 추가합니다.
-                        var jsonOptions = new JsonSerializerOptions
-                        {
-                            WriteIndented = true,
-                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                        };
-                        responseString = JsonSerializer.Serialize(statuses, jsonOptions);
-                        // <<★★★ 수정 완료 ★★★>>
-
-                        contentType = "application/json; charset=utf-8";
+                    case "/":
+                    case "/index.html":
+                        await HandleFileRequest(response, "dashboard/index.html", "text/html; charset=utf-8");
                         break;
-
                     default:
-                        response.StatusCode = (int)HttpStatusCode.NotFound;
-                        responseString = "Error 404: Page Not Found";
+                        SendResponse(response, HttpStatusCode.NotFound);
                         break;
                 }
-
-                buffer = Encoding.UTF8.GetBytes(responseString);
-                response.ContentType = contentType;
-                response.ContentLength64 = buffer.Length;
-                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Web Server] Error during request processing: {ex.Message}");
-                if (response.OutputStream.CanWrite)
+                Console.WriteLine($"[Web Server] Error handling request for {request.Url}: {ex.Message}");
+                if (!response.OutputStream.CanWrite) return;
+                try
                 {
-                    response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                    SendResponse(response, HttpStatusCode.InternalServerError);
+                }
+                catch (Exception innerEx)
+                {
+                    Console.WriteLine($"[Web Server] Critical error: Could not send error response. {innerEx.Message}");
                 }
             }
             finally
             {
-                response.OutputStream.Close();
+                response.Close();
             }
+        }
+
+        private async Task HandleStatusRequest(HttpListenerResponse response)
+        {
+            var summary = await _dbManager.GetClientStatusSummaryAsync();
+            var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var json = JsonSerializer.Serialize(summary, options);
+            SendResponse(response, HttpStatusCode.OK, "application/json", json);
+        }
+
+        private async Task HandleFileRequest(HttpListenerResponse response, string filePath, string mimeType)
+        {
+            string fullPath = Path.Combine(AppContext.BaseDirectory, filePath);
+            if (File.Exists(fullPath))
+            {
+                var content = await File.ReadAllBytesAsync(fullPath);
+                SendResponse(response, HttpStatusCode.OK, mimeType, content);
+            }
+            else
+            {
+                Console.WriteLine($"[Web Server] File not found: {fullPath}");
+                SendResponse(response, HttpStatusCode.NotFound);
+            }
+        }
+
+        // ★★★ 종료 요청을 처리하는 메서드 ★★★
+        private async Task HandleShutdownRequest(HttpListenerRequest request, HttpListenerResponse response)
+        {
+            try
+            {
+                using var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+                string jsonBody = await reader.ReadToEndAsync();
+                var body = JsonSerializer.Deserialize<JsonElement>(jsonBody);
+
+                if (body.TryGetProperty("clientId", out var clientIdElement) && clientIdElement.TryGetInt32(out int clientId))
+                {
+                    if (_activeClients.TryGetValue(clientId, out var handler))
+                    {
+                        await handler.SendShutdownCommandAsync();
+                        var successResponse = new { success = true, message = "Shutdown command sent." };
+                        SendResponse(response, HttpStatusCode.OK, "application/json", JsonSerializer.Serialize(successResponse));
+                    }
+                    else
+                    {
+                        var notFoundResponse = new { success = false, message = "Client not found or is not connected." };
+                        SendResponse(response, HttpStatusCode.NotFound, "application/json", JsonSerializer.Serialize(notFoundResponse));
+                    }
+                }
+                else
+                {
+                    var badRequestResponse = new { success = false, message = "Invalid request body. 'clientId' is required." };
+                    SendResponse(response, HttpStatusCode.BadRequest, "application/json", JsonSerializer.Serialize(badRequestResponse));
+                }
+            }
+            catch (JsonException)
+            {
+                var badRequestResponse = new { success = false, message = "Invalid JSON format." };
+                SendResponse(response, HttpStatusCode.BadRequest, "application/json", JsonSerializer.Serialize(badRequestResponse));
+            }
+        }
+
+        private void SendResponse(HttpListenerResponse response, HttpStatusCode statusCode, string contentType = "text/plain", string content = "")
+        {
+            SendResponse(response, statusCode, contentType, Encoding.UTF8.GetBytes(content));
+        }
+
+        private void SendResponse(HttpListenerResponse response, HttpStatusCode statusCode, string contentType, byte[] content)
+        {
+            response.StatusCode = (int)statusCode;
+            response.ContentType = contentType;
+            response.ContentLength64 = content.Length;
+            response.OutputStream.Write(content, 0, content.Length);
         }
     }
 }

@@ -16,17 +16,17 @@ namespace CatiaMonitor.Client
 
         public static async Task Main(string[] args)
         {
-            // <<★★★ 새로운 기능 시작 ★★★>>
-            // 1. 닫기 버튼을 눌렀을 때 숨겨지도록 핸들러를 설정합니다.
+            // ★★★ 시작 인자 및 콘솔 관리 로직 개선 ★★★
+            // 닫기 버튼을 눌렀을 때 숨겨지도록 핸들러를 설정합니다.
             ConsoleManager.SetupCloseHandler();
 
-            // 2. 프로그램 인자에 "/background"가 있으면 콘솔 창을 즉시 숨깁니다.
-            if (args.Contains("/background", StringComparer.OrdinalIgnoreCase))
+            // 프로그램 인자에 "/background"가 있으면 콘솔 창을 즉시 숨깁니다.
+            bool runInBackground = args.Contains("/background", StringComparer.OrdinalIgnoreCase);
+            if (runInBackground)
             {
-                Console.WriteLine("[Info] Starting in background mode.");
+                Console.WriteLine("[Info] Starting in background mode and hiding console.");
                 ConsoleManager.Hide();
             }
-            // <<★★★ 새로운 기능 끝 ★★★>>
 
             Console.Title = "CATIA Monitor Client";
             Console.WriteLine("--- CATIA Monitor Client ---");
@@ -35,18 +35,22 @@ namespace CatiaMonitor.Client
             Console.WriteLine("[Info] 프로그램을 완전히 종료하려면 작업 관리자에서 'CatiaMonitor.Client.exe' 프로세스를 직접 종료해야 합니다.");
             Console.ResetColor();
 
+            // 서버 자동 탐색
             string? serverIp = await ServerFinder.DiscoverServerAsync();
 
             if (serverIp == null)
             {
-                Console.WriteLine("\nCould not find a server automatically. Please select from the list or enter a custom IP.");
-                serverIp = await SelectServerIpAddressAsync();
+                Console.WriteLine("\n[Discovery] Could not find a server automatically. Please select an IP address manually.");
+                // 백그라운드 모드에서 서버를 찾지 못하면 루프백을 기본값으로 사용
+                serverIp = runInBackground ? "127.0.0.1" : await SelectServerIpAddressAsync();
             }
 
             Console.WriteLine($"[Config] Server IP has been set to: {serverIp}");
 
+            // 자동 시작 등록 상태 확인 및 필요 시 재등록
             CheckAndCorrectAutoStartRegistration();
 
+            // 서버에 계속해서 재연결을 시도하는 메인 루프
             while (true)
             {
                 try
@@ -63,8 +67,7 @@ namespace CatiaMonitor.Client
 
         private static async Task<string> SelectServerIpAddressAsync()
         {
-            // (이전과 동일, 변경 없음)
-            Console.WriteLine("\nSearching for available network interfaces...");
+            Console.WriteLine("\n[Network] Searching for available network interfaces...");
             var ipAddresses = new List<string> { "127.0.0.1" };
             try
             {
@@ -110,10 +113,6 @@ namespace CatiaMonitor.Client
             }
         }
 
-        /// <summary>
-        /// <<★★★ 수정된 부분 ★★★>>
-        /// 자동 시작 등록 경로를 확인할 때 "/background" 인자까지 포함하여 정확하게 비교합니다.
-        /// </summary>
         private static void CheckAndCorrectAutoStartRegistration()
         {
             Console.WriteLine("[AutoStart] Checking startup registration...");
@@ -128,7 +127,7 @@ namespace CatiaMonitor.Client
             }
             else if (!registeredPath.Equals(expectedPath, StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine($"[AutoStart] Registered path is outdated. Re-registering...");
+                Console.WriteLine($"[AutoStart] Registered path is outdated. Re-registering with new path: {expectedPath}");
                 AutoStarter.RegisterInStartup();
             }
             else
@@ -139,13 +138,13 @@ namespace CatiaMonitor.Client
 
         private static async Task ConnectAndProcessAsync(string serverIpAddress, int serverPort)
         {
-            // (이전과 동일, 변경 없음)
             using (var client = new TcpClient())
             {
                 Console.WriteLine($"\n[Network] Attempting to connect to {serverIpAddress}:{serverPort}...");
                 await client.ConnectAsync(serverIpAddress, serverPort);
                 Console.WriteLine("[Network] Successfully connected to server.");
                 NetworkStream stream = client.GetStream();
+
                 while (client.Connected)
                 {
                     Console.WriteLine("[Network] Waiting for a request from the server...");
@@ -156,9 +155,11 @@ namespace CatiaMonitor.Client
                         Console.WriteLine("[Network] Server closed the connection.");
                         break;
                     }
-                    string serverRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                    string serverRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
                     Console.WriteLine($"[Network] Received request: '{serverRequest}'");
-                    if (serverRequest.Trim().Equals("CHECK_STATUS", StringComparison.OrdinalIgnoreCase))
+
+                    // ★★★ 서버로부터 받은 메시지에 따라 분기 처리 ★★★
+                    if (serverRequest.Equals("CHECK_STATUS", StringComparison.OrdinalIgnoreCase))
                     {
                         bool isRunning = StatusChecker.IsCatiaRunning();
                         var response = new { IsCatiaRunning = isRunning };
@@ -166,6 +167,11 @@ namespace CatiaMonitor.Client
                         byte[] dataToSend = Encoding.UTF8.GetBytes(jsonResponse);
                         await stream.WriteAsync(dataToSend, 0, dataToSend.Length);
                         Console.WriteLine($"[Network] Sent response to server: {jsonResponse}");
+                    }
+                    else if (serverRequest.Equals("SHUTDOWN_CATIA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine("[Action] Received a command from the server to shut down CATIA.");
+                        StatusChecker.TerminateCatiaProcess();
                     }
                 }
             }
