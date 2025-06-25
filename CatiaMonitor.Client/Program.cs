@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -7,99 +10,168 @@ using System.Threading.Tasks;
 namespace CatiaMonitor.Client
 {
     public class Program
-    { 
-        // --- 설정 ---
-        // 실제 운영 시에는 설정 파일(예: appsettings.json)에서 읽어오는 것이 좋습니다.
-        private const string ServerIpAddress = "127.0.0.1"; // 서버의 IP 주소 (localhost 테스트용)
-        private const int ServerPort = 12345;              // 서버와 통신할 포트 번호
-        private const int ReconnectDelaySeconds = 30;      // 서버 연결 실패 시 재시도 대기 시간 (초)
-        // --- --- ---
+    {
+        private const int ServerPort = 12345;
+        private const int ReconnectDelaySeconds = 30;
 
         public static async Task Main(string[] args)
         {
+            Console.Title = "CATIA Monitor Client";
             Console.WriteLine("--- CATIA Monitor Client ---");
 
-            // 1. Windows 시작 시 자동 실행되도록 등록
-            //    만약 등록되어 있지 않다면 등록을 시도합니다.
-            if (!AutoStarter.IsRegisteredForStartup())
-            {
-                Console.WriteLine("Application is not registered for startup. Registering...");
-                AutoStarter.RegisterInStartup();
-            }
-            else
-            {
-                Console.WriteLine("Application is already registered for startup.");
-            }
+            // <<<<< 새로운 기능 시작 >>>>>
+            // 1. 자동으로 서버를 찾습니다.
+            string? serverIp = await ServerFinder.DiscoverServerAsync();
 
-            // 2. 무한 루프를 돌며 서버에 계속 연결을 시도하고 통신합니다.
+            // 2. 서버를 찾지 못한 경우, 사용자에게 수동으로 선택하도록 합니다.
+            if (serverIp == null)
+            {
+                Console.WriteLine("\nCould not find a server automatically. Please select from the list or enter a custom IP.");
+                serverIp = await SelectServerIpAddressAsync();
+            }
+            // <<<<< 새로운 기능 끝 >>>>>
+
+            Console.WriteLine($"[Config] Server IP has been set to: {serverIp}");
+
+            CheckAndCorrectAutoStartRegistration();
+
             while (true)
             {
                 try
                 {
-                    // 서버에 연결을 시도합니다.
-                    await ConnectAndProcessAsync();
-                }
-                catch (SocketException ex)
-                {
-                    // 서버가 꺼져 있거나 네트워크 문제로 연결에 실패한 경우
-                    Console.WriteLine($"[Error] Connection failed: {ex.Message}. Retrying in {ReconnectDelaySeconds} seconds.");
+                    await ConnectAndProcessAsync(serverIp, ServerPort);
                 }
                 catch (Exception ex)
                 {
-                    // 기타 예상치 못한 오류 발생 시
-                    Console.WriteLine($"[Error] An unexpected error occurred: {ex.Message}. Retrying in {ReconnectDelaySeconds} seconds.");
+                    Console.WriteLine($"[Error] Connection failed to {serverIp}: {ex.Message}. Retrying in {ReconnectDelaySeconds} seconds.");
                 }
-
-                // 재연결 시도 전 잠시 대기하여 CPU 사용률 급증을 방지합니다.
                 await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds));
             }
         }
 
         /// <summary>
-        /// 서버에 연결하고, 상태 확인 요청을 처리하는 메인 로직입니다.
+        /// 로컬 네트워크 인터페이스를 스캔하여 사용자에게 서버 IP를 선택하도록 요청하는 메서드입니다.
+        /// (서버 자동 탐지 실패 시에만 호출됩니다.)
         /// </summary>
-        private static async Task ConnectAndProcessAsync()
+        private static async Task<string> SelectServerIpAddressAsync()
         {
-            // using 구문은 TcpClient 객체가 범위를 벗어날 때 자동으로 리소스를 해제(연결 종료)해줍니다.
+            Console.WriteLine("\nSearching for available network interfaces...");
+            var ipAddresses = new List<string> { "127.0.0.1" };
+
+            try
+            {
+                var hostAddresses = await Dns.GetHostAddressesAsync(Dns.GetHostName());
+                foreach (var ip in hostAddresses)
+                {
+                    if (ip.AddressFamily == AddressFamily.InterNetwork && !ipAddresses.Contains(ip.ToString()))
+                    {
+                        ipAddresses.Add(ip.ToString());
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Warning] Could not automatically detect network IP addresses: {ex.Message}");
+            }
+
+            while (true)
+            {
+                Console.WriteLine("\nPlease select the server IP address to connect to:");
+                for (int i = 0; i < ipAddresses.Count; i++)
+                {
+                    Console.WriteLine($"  [{i + 1}] {ipAddresses[i]}");
+                }
+                Console.WriteLine("  [0] Enter a custom IP address");
+                Console.Write("\nEnter your choice: ");
+
+                string? choice = Console.ReadLine();
+                if (int.TryParse(choice, out int selection))
+                {
+                    if (selection > 0 && selection <= ipAddresses.Count)
+                    {
+                        return ipAddresses[selection - 1];
+                    }
+                    else if (selection == 0)
+                    {
+                        Console.Write("Please enter the custom server IP address: ");
+                        string? customIp = Console.ReadLine();
+                        if (!string.IsNullOrWhiteSpace(customIp) && IPAddress.TryParse(customIp.Trim(), out _))
+                        {
+                            return customIp.Trim();
+                        }
+                        else
+                        {
+                            Console.WriteLine("Invalid IP address format. Please try again.");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Invalid selection. Please try again.");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Invalid input. Please enter a number.");
+                }
+            }
+        }
+
+        private static void CheckAndCorrectAutoStartRegistration()
+        {
+            Console.WriteLine("[AutoStart] Checking startup registration...");
+            string? registeredPath = AutoStarter.GetRegisteredPath();
+            string expectedPath = $"\"{AutoStarter.ExecutablePath}\"";
+
+            if (registeredPath == null)
+            {
+                Console.WriteLine("[AutoStart] Not registered for startup. Registering now...");
+                AutoStarter.RegisterInStartup();
+            }
+            else if (!registeredPath.Equals(expectedPath, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"[AutoStart] Registered path is outdated. Re-registering...");
+                AutoStarter.RegisterInStartup();
+            }
+            else
+            {
+                Console.WriteLine("[AutoStart] Already registered correctly.");
+            }
+        }
+
+        private static async Task ConnectAndProcessAsync(string serverIpAddress, int serverPort)
+        {
             using (var client = new TcpClient())
             {
-                Console.WriteLine($"Attempting to connect to server at {ServerIpAddress}:{ServerPort}...");
-                await client.ConnectAsync(ServerIpAddress, ServerPort);
-                Console.WriteLine("Successfully connected to the server.");
+                Console.WriteLine($"\n[Network] Attempting to connect to {serverIpAddress}:{serverPort}...");
+                await client.ConnectAsync(serverIpAddress, serverPort);
+                Console.WriteLine("[Network] Successfully connected to server.");
 
                 NetworkStream stream = client.GetStream();
 
-                // 클라이언트가 연결되어 있는 동안 계속 통신합니다.
                 while (client.Connected)
                 {
+                    Console.WriteLine("[Network] Waiting for a request from the server...");
                     var buffer = new byte[1024];
                     int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
 
-                    // 서버가 연결을 끊었거나 데이터가 없으면 루프를 탈출합니다.
                     if (bytesRead == 0)
                     {
-                        Console.WriteLine("Server closed the connection.");
+                        Console.WriteLine("[Network] Server closed the connection.");
                         break;
                     }
 
                     string serverRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                    
-                    // 서버로부터 상태 확인 요청("CHECK_STATUS")을 받았는지 확인합니다.
+                    Console.WriteLine($"[Network] Received request: '{serverRequest}'");
+
                     if (serverRequest.Trim().Equals("CHECK_STATUS", StringComparison.OrdinalIgnoreCase))
                     {
-                        Console.WriteLine("Received status check request from server.");
-
-                        // CATIA 실행 상태를 확인합니다.
                         bool isRunning = StatusChecker.IsCatiaRunning();
-
-                        // 서버에 보낼 응답 데이터를 JSON 형식으로 생성합니다.
-                        var response = new { IsCatiaRunning = isRunning, Timestamp = DateTime.UtcNow };
+                        var response = new { IsCatiaRunning = isRunning };
                         string jsonResponse = JsonSerializer.Serialize(response);
+
                         byte[] dataToSend = Encoding.UTF8.GetBytes(jsonResponse);
-                        
-                        // 서버에 응답을 전송합니다.
                         await stream.WriteAsync(dataToSend, 0, dataToSend.Length);
-                        Console.WriteLine($"Sent status to server: {jsonResponse}");
+                        Console.WriteLine($"[Network] Sent response to server: {jsonResponse}");
                     }
                 }
             }
