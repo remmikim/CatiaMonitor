@@ -4,165 +4,155 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CATIA Monitor Dashboard</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /*추가적인 커스텀 */
-        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-
         body {
-            font-family: 'Pretendard', sans-serif;
+            font-family: 'Malgun Gothic', sans-serif;
+            margin: 20px;
+            background-color: #f4f4f9;
         }
 
-        .status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 8px;
+        h1 {
+            color: #333;
         }
 
-        .status-running {
-            background-color: #22c55e; /* green-500 */
-            animation: pulse 2s infinite;
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
 
-        .status-stopped {
-            background-color: #ef4444; /* red-500 */
-        }
-        /* <<★★★ 새로운 스타일 추가 ★★★>> */
-        .status-unreachable {
-            background-color: #6b7280; /* gray-500 */
+        th, td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: left;
         }
 
-        @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+
+        .status {
+            padding: 5px 10px;
+            color: white;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .status-Running {
+            background-color: #28a745;
+        }
+
+        .status-Offline {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .status-Unreachable {
+            background-color: #dc3545;
+        }
+
+        .status-Connecting {
+            background-color: #17a2b8;
+        }
+
+        button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            color: white;
+            background-color: #6c757d;
+        }
+
+            button:hover {
+                opacity: 0.9;
             }
 
-            50% {
-                opacity: 0.5;
-            }
+        .shutdown-btn {
+            background-color: #dc3545;
         }
     </style>
 </head>
-<body class="bg-gray-100">
-    <div class="container mx-auto p-4 md:p-8">
-        <header class="mb-8">
-            <h1 class="text-3xl font-bold text-gray-800">CATIA Monitor Dashboard</h1>
-            <p class="text-gray-600">클라이언트 PC의 카티아 실행 상태를 실시간으로 확인합니다.</p>
-        </header>
-
-        <main>
-            <div class="bg-white shadow-md rounded-lg overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left">
-                        <thead class="bg-gray-50 border-b-2 border-gray-200">
-                            <tr>
-                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">상태</th>
-                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">IP 주소</th>
-                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">최종 업데이트(로그)</th>
-                                <th class="p-4 text-sm font-semibold text-gray-600 tracking-wider">마지막 연결 시각</th>
-                            </tr>
-                        </thead>
-                        <tbody id="status-table-body" class="divide-y divide-gray-200">
-                            <!-- 로딩 표시 -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <footer class="text-center mt-6 text-sm text-gray-500">
-                <p>5초마다 자동으로 갱신됩니다. 마지막 업데이트: <span id="last-updated" class="font-semibold">N/A</span></p>
-            </footer>
-        </main>
-    </div>
+<body>
+    <h1>CATIA Monitor Dashboard</h1>
+    <table id="statusTable">
+        <thead>
+            <tr>
+                <th>Client IP</th>
+                <th>Status</th>
+                <th>Last Seen</th>
+                <th>CATIA Version</th>
+                <th>작업</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
 
     <script>
-        const tableBody = document.getElementById('status-table-body');
-        const lastUpdatedSpan = document.getElementById('last-updated');
-
-        function formatDateTime(utcString) {
-            if (utcString === 'N/A' || !utcString) return 'N/A';
-            try {
-                const date = new Date(utcString);
-                if (isNaN(date.getTime())) return utcString;
-                return date.toLocaleString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-            } catch (e) {
-                return utcString;
+        // ★★★ 'CATIA 종료' 버튼 클릭 시 호출될 함수 추가 ★★★
+        function shutdownCatia(clientId) {
+            if (!confirm(`선택한 클라이언트의 CATIA 프로그램을 정말로 종료하시겠습니까?`)) {
+                return;
             }
+
+            fetch('/api/shutdown', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId: clientId })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('종료 명령을 전송했습니다.');
+                    } else {
+                        alert('명령 전송에 실패했습니다: ' + data.message);
+                    }
+                    // 잠시 후 상태를 다시 로드
+                    setTimeout(fetchStatus, 1000);
+                })
+                .catch(error => {
+                    console.error('Shutdown API call failed:', error);
+                    alert('API 호출 중 오류가 발생했습니다.');
+                });
         }
 
-        async function fetchAndUpdateStatus() {
-            const apiUrl = `${window.location.protocol}//${window.location.host}/api/status`;
-
-            try {
-                const response = await fetch(apiUrl);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-                // 서버에서 camelCase로 보내주므로 JavaScript에서도 camelCase로 받습니다.
-                const clients = await response.json();
-
-                tableBody.innerHTML = '';
-
-                if (clients.length === 0) {
-                    tableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-gray-500">연결된 클라이언트가 없습니다.</td></tr>`;
-                } else {
-                    clients.forEach(client => {
-                        const row = document.createElement('tr');
-
-                        // <<★★★ 로직 대폭 수정 ★★★>>
-                        let statusClass = '';
-                        let statusText = '';
-
-                        // 서버에서 보내주는 Status 값에 따라 클래스와 텍스트를 결정합니다.
-                        switch (client.status) {
-                            case 'Running':
-                                statusClass = 'status-running';
-                                statusText = '온라인';
-                                break;
-                            case 'Offline':
-                                statusClass = 'status-stopped';
-                                statusText = '오프라인';
-                                break;
-                            case 'Unreachable':
-                                statusClass = 'status-unreachable';
-                                statusText = '연결 끊김';
-                                break;
-                            case 'Connecting...':
-                                statusClass = 'status-unreachable';
-                                statusText = '연결 중...';
-                                break;
-                            default:
-                                statusClass = 'status-unreachable';
-                                statusText = '알 수 없음';
-                                break;
-                        }
-
-                        row.innerHTML = `
-                                <td class="p-4 whitespace-nowrap">
-                                    <div class="flex items-center">
-                                        <span class="status-dot ${statusClass}"></span>
-                                        <span class="font-medium text-gray-900">${statusText}</span>
-                                    </div>
+        function fetchStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.querySelector("#statusTable tbody");
+                    tbody.innerHTML = ''; // 테이블 내용을 초기화
+                    data.forEach(client => {
+                        const row = `<tr>
+                                <td>${client.IpAddress}</td>
+                                <td><span class="status status-${client.Status}">${client.Status}</span></td>
+                                <td>${client.LastSeen}</td>
+                                <td>${client.CatiaVersion || 'N/A'}</td>
+                                <td>
+                                    <button class="shutdown-btn" onclick="shutdownCatia(${client.ClientId})">CATIA 종료</button>
                                 </td>
-                                <td class="p-4 whitespace-nowrap text-gray-800 font-mono">${client.ipAddress}</td>
-                                <td class="p-4 whitespace-nowrap text-gray-600 font-mono">${formatDateTime(client.lastLogTime)}</td>
-                                <td class="p-4 whitespace-nowrap text-gray-600 font-mono">${formatDateTime(client.lastSeen)}</td>
-                            `;
-                        tableBody.appendChild(row);
+                            </tr>`;
+                        tbody.innerHTML += row;
                     });
-                }
-                lastUpdatedSpan.textContent = new Date().toLocaleTimeString('ko-KR');
-
-            } catch (error) {
-                console.error("Failed to fetch status:", error);
-                tableBody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-red-500">데이터를 불러오는데 실패했습니다. 서버가 실행 중인지, 방화벽을 확인하세요.</td></tr>`;
-            }
+                })
+                .catch(error => console.error('Error fetching status:', error));
         }
 
-        // 페이지 로드 시 즉시 실행하고, 5초마다 반복합니다.
-        document.addEventListener('DOMContentLoaded', fetchAndUpdateStatus);
-        setInterval(fetchAndUpdateStatus, 5000);
+        // 5초마다 상태를 자동으로 갱신
+        setInterval(fetchStatus, 5000);
+        // 페이지 로드 시 즉시 상태를 가져옴
+        document.addEventListener('DOMContentLoaded', fetchStatus);
     </script>
 </body>
 </html>

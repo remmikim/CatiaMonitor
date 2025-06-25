@@ -1,106 +1,78 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading.Tasks;
+using System.Collections.Concurrent; // 네임스페이스 추가
 
 namespace CatiaMonitor.Server
 {
-    public class Program
+    class Program
     {
         private const int TcpPort = 12345;
-        private const int DiscoveryPort = 12346; // 탐색을 위한 새 포트
         private const string HttpUrl = "http://+:8080/";
 
-        public static async Task Main(string[] args)
+        // ★★★ 활성 클라이언트를 저장할 스레드 안전한 딕셔너리 추가 ★★★
+        private static readonly ConcurrentDictionary<int, ClientHandler> s_activeClients = new();
+
+        static async Task Main(string[] args)
         {
+            Console.WriteLine("--- CATIA Monitor Server ---");
+            Console.WriteLine("Initializing...");
+
+            var dbManager = new DatabaseManager("catia_monitor.db");
+            await dbManager.InitializeDatabaseAsync();
+
+            // ★★★ WebServer에 딕셔너리 인스턴스를 전달 ★★★
+            var webServer = new WebServer(HttpUrl, dbManager, s_activeClients);
+            _ = Task.Run(webServer.Run); // 웹 서버를 백그라운드에서 실행
+
+            var tcpListener = new TcpListener(IPAddress.Any, TcpPort);
             try
             {
-                Console.WriteLine("--- CATIA Monitor Server ---");
-                Console.Title = "CATIA Monitor Server";
-
-                var dbManager = new DatabaseManager();
-                await dbManager.InitializeDatabaseAsync();
-
-                var webServer = new WebServer(dbManager, HttpUrl);
-                _ = Task.Run(webServer.Start);
-
-                // <<<<< 새로운 기능 시작 >>>>>
-                // 서버 탐색 응답 리스너 시작
-                _ = Task.Run(StartDiscoveryListener);
-                // <<<<< 새로운 기능 끝 >>>>>
-
-                var tcpListener = new TcpListener(IPAddress.Any, TcpPort);
                 tcpListener.Start();
-                Console.WriteLine($"[TCP Server] Started. Listening for clients on port {TcpPort}...");
+                Console.WriteLine($"[TCP Server] Started and listening on port {TcpPort}.");
 
                 while (true)
                 {
                     TcpClient client = await tcpListener.AcceptTcpClientAsync();
-                    var handler = new ClientHandler(client, dbManager);
-                    _ = Task.Run(handler.HandleClientAsync);
+
+                    // ★★★ 클라이언트 핸들러를 생성하기 전에 DB에서 ID를 먼저 확보하고 딕셔너리에 추가 ★★★
+                    _ = Task.Run(async () => {
+                        string clientIp = ((IPEndPoint?)client.Client.RemoteEndPoint)?.Address.ToString() ?? "Unknown";
+                        int clientId = await dbManager.EnsureClientExists(clientIp);
+
+                        var handler = new ClientHandler(client, dbManager, clientId, s_activeClients);
+
+                        if (s_activeClients.TryAdd(clientId, handler))
+                        {
+                            Console.WriteLine($"[System] Client {clientIp} (ID: {clientId}) added to active list. Total active clients: {s_activeClients.Count}");
+                            await handler.HandleClientAsync();
+                        }
+                        else
+                        {
+                            Console.WriteLine($"[Warning] Client with ID {clientId} is already connected. Closing new connection.");
+                            client.Close();
+                        }
+                    });
                 }
+            }
+            catch (SocketException se)
+            {
+                Console.WriteLine($"[Error] A socket error occurred: {se.Message}");
+                Console.WriteLine("Please ensure no other application is using port 12345 and you have network permissions.");
             }
             catch (Exception ex)
             {
-                Console.ForegroundColor = ConsoleColor.Red;
-                Console.WriteLine("=================================================");
-                Console.WriteLine("    PROGRAM FAILED TO START (FATAL ERROR)");
-                Console.WriteLine("=================================================");
-                Console.WriteLine($"[Error Type]: {ex.GetType().FullName}");
-                Console.WriteLine($"\n[Message]: {ex.Message}");
-                Console.WriteLine("\n--- [Stack Trace] ---");
-                Console.WriteLine(ex.StackTrace);
-                Console.ResetColor();
-
+                Console.WriteLine($"[Error] An unexpected error occurred: {ex.Message}");
                 if (ex is HttpListenerException httpEx && httpEx.ErrorCode == 5)
                 {
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("\n--- [추정 원인 및 해결 방법] ---");
-                    Console.WriteLine("오류 코드 5는 '액세스 거부'를 의미합니다. 이 프로그램이 네트워크 포트를 사용하려면 관리자 권한이 필요합니다.");
-                    Console.WriteLine("Visual Studio 또는 이 프로그램을 '관리자 권한으로 실행' 하셨는지 다시 한번 확인해주세요.");
-                    Console.ResetColor();
+                    Console.WriteLine("[Hint] This error often means the program needs to be run with Administrator privileges to bind to the HTTP URL.");
                 }
-
-                Console.WriteLine("\n프로그램을 시작할 수 없습니다. 아무 키나 눌러 종료하세요.");
-                Console.ReadKey();
             }
-        }
-
-        /// <summary>
-        /// <<<<< 새로운 기능 >>>>>
-        /// UDP 브로드캐스트를 수신하여 서버의 존재를 알리는 응답을 보냅니다.
-        /// </summary>
-        private static async Task StartDiscoveryListener()
-        {
-            using (var udpServer = new UdpClient(DiscoveryPort))
+            finally
             {
-                Console.WriteLine($"[Discovery] Server discovery listener started on UDP port {DiscoveryPort}.");
-                const string requestMessage = "CATIAMONITOR_DISCOVERY_REQUEST";
-                const string responseMessage = "CATIAMONITOR_DISCOVERY_RESPONSE";
-                var responseBytes = Encoding.UTF8.GetBytes(responseMessage);
-
-                while (true)
-                {
-                    try
-                    {
-                        // 클라이언트로부터의 요청을 비동기적으로 기다립니다.
-                        UdpReceiveResult result = await udpServer.ReceiveAsync();
-                        string receivedString = Encoding.UTF8.GetString(result.Buffer);
-
-                        // 약속된 요청 메시지인지 확인합니다.
-                        if (receivedString.Equals(requestMessage))
-                        {
-                            Console.WriteLine($"[Discovery] Received a discovery request from {result.RemoteEndPoint}. Sending response.");
-                            // 요청을 보낸 클라이언트에게만 응답을 보냅니다.
-                            await udpServer.SendAsync(responseBytes, responseBytes.Length, result.RemoteEndPoint);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[Discovery] Error in discovery listener: {ex.Message}");
-                    }
-                }
+                tcpListener.Stop();
+                Console.WriteLine("[TCP Server] Server stopped.");
             }
         }
     }

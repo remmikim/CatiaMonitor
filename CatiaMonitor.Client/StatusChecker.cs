@@ -1,5 +1,4 @@
-﻿using System;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace CatiaMonitor.Client
 {
@@ -9,26 +8,34 @@ namespace CatiaMonitor.Client
 
         public static bool IsCatiaRunning()
         {
+            // Console.WriteLine("[Status] Checking for CATIA process (CNEXT.exe)..."); // 로그는 Program.cs에서 관리
+            return Process.GetProcessesByName(CatiaProcessName).Length > 0;
+        }
+
+        // ★★★ CATIA 프로세스를 종료하는 새 메서드 추가 ★★★
+        public static void TerminateCatiaProcess()
+        {
+            Console.WriteLine($"[Action] Attempting to terminate '{CatiaProcessName}.exe' processes...");
             try
             {
-                Process[] processes = Process.GetProcessesByName(CatiaProcessName);
-                bool isRunning = processes.Length > 0;
+                var processes = Process.GetProcessesByName(CatiaProcessName);
+                if (processes.Length == 0)
+                {
+                    Console.WriteLine($"[Action] No '{CatiaProcessName}.exe' process found running.");
+                    return;
+                }
 
-                // 확인 결과를 콘솔에 로그로 남깁니다.
-                if (isRunning)
+                foreach (var process in processes)
                 {
-                    Console.WriteLine($"[StatusCheck] Found {processes.Length} instance(s) of '{CatiaProcessName}.exe'. CATIA is running.");
+                    Console.WriteLine($"[Action] Terminating process ID: {process.Id}");
+                    process.Kill();
+                    process.WaitForExit(); // 프로세스가 완전히 종료될 때까지 대기
+                    Console.WriteLine($"[Action] Process ID: {process.Id} has been terminated.");
                 }
-                else
-                {
-                    Console.WriteLine($"[StatusCheck] '{CatiaProcessName}.exe' process not found. CATIA is not running.");
-                }
-                return isRunning;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[StatusCheck] An error occurred while checking for process: {ex.Message}");
-                return false;
+                Console.WriteLine($"[Error] Failed to terminate CATIA process: {ex.Message}");
             }
         }
     }
