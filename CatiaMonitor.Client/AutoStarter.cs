@@ -9,7 +9,6 @@ namespace CatiaMonitor.Client
         private const string AppName = "CatiaMonitorClient";
         private const string StartupRegistryKeyPath = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
 
-        // 현재 실행 중인 프로그램의 전체 경로를 가져옵니다.
         public static string ExecutablePath => Environment.ProcessPath ?? throw new InvalidOperationException("Cannot get executable path.");
 
         public static void RegisterInStartup()
@@ -24,7 +23,11 @@ namespace CatiaMonitor.Client
                         return;
                     }
 
-                    string currentPath = $"\"{ExecutablePath}\"";
+                    // <<★★★ 수정된 부분 ★★★>>
+                    // 실행 경로 뒤에 /background 인자를 추가하여 최소화 상태로 시작하도록 합니다.
+                    string currentPath = $"\"{ExecutablePath}\" /background";
+                    // <<★★★ 수정 완료 ★★★>>
+
                     Console.WriteLine($"[AutoStart] Registering path in registry: {currentPath}");
                     startupKey.SetValue(AppName, currentPath);
                     Console.WriteLine($"[AutoStart] Successfully registered for startup.");
@@ -36,7 +39,6 @@ namespace CatiaMonitor.Client
             }
         }
 
-        // 레지스트리에 등록된 경로를 가져오는 메소드 추가
         public static string? GetRegisteredPath()
         {
             try

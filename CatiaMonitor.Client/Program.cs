@@ -16,20 +16,32 @@ namespace CatiaMonitor.Client
 
         public static async Task Main(string[] args)
         {
+            // <<★★★ 새로운 기능 시작 ★★★>>
+            // 1. 닫기 버튼을 눌렀을 때 숨겨지도록 핸들러를 설정합니다.
+            ConsoleManager.SetupCloseHandler();
+
+            // 2. 프로그램 인자에 "/background"가 있으면 콘솔 창을 즉시 숨깁니다.
+            if (args.Contains("/background", StringComparer.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("[Info] Starting in background mode.");
+                ConsoleManager.Hide();
+            }
+            // <<★★★ 새로운 기능 끝 ★★★>>
+
             Console.Title = "CATIA Monitor Client";
             Console.WriteLine("--- CATIA Monitor Client ---");
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("\n[Info] 이 콘솔 창의 닫기(X) 버튼을 눌러도 프로그램은 종료되지 않고 백그라운드에서 계속 실행됩니다.");
+            Console.WriteLine("[Info] 프로그램을 완전히 종료하려면 작업 관리자에서 'CatiaMonitor.Client.exe' 프로세스를 직접 종료해야 합니다.");
+            Console.ResetColor();
 
-            // <<<<< 새로운 기능 시작 >>>>>
-            // 1. 자동으로 서버를 찾습니다.
             string? serverIp = await ServerFinder.DiscoverServerAsync();
 
-            // 2. 서버를 찾지 못한 경우, 사용자에게 수동으로 선택하도록 합니다.
             if (serverIp == null)
             {
                 Console.WriteLine("\nCould not find a server automatically. Please select from the list or enter a custom IP.");
                 serverIp = await SelectServerIpAddressAsync();
             }
-            // <<<<< 새로운 기능 끝 >>>>>
 
             Console.WriteLine($"[Config] Server IP has been set to: {serverIp}");
 
@@ -49,15 +61,11 @@ namespace CatiaMonitor.Client
             }
         }
 
-        /// <summary>
-        /// 로컬 네트워크 인터페이스를 스캔하여 사용자에게 서버 IP를 선택하도록 요청하는 메서드입니다.
-        /// (서버 자동 탐지 실패 시에만 호출됩니다.)
-        /// </summary>
         private static async Task<string> SelectServerIpAddressAsync()
         {
+            // (이전과 동일, 변경 없음)
             Console.WriteLine("\nSearching for available network interfaces...");
             var ipAddresses = new List<string> { "127.0.0.1" };
-
             try
             {
                 var hostAddresses = await Dns.GetHostAddressesAsync(Dns.GetHostName());
@@ -73,7 +81,6 @@ namespace CatiaMonitor.Client
             {
                 Console.WriteLine($"[Warning] Could not automatically detect network IP addresses: {ex.Message}");
             }
-
             while (true)
             {
                 Console.WriteLine("\nPlease select the server IP address to connect to:");
@@ -83,15 +90,11 @@ namespace CatiaMonitor.Client
                 }
                 Console.WriteLine("  [0] Enter a custom IP address");
                 Console.Write("\nEnter your choice: ");
-
                 string? choice = Console.ReadLine();
                 if (int.TryParse(choice, out int selection))
                 {
-                    if (selection > 0 && selection <= ipAddresses.Count)
-                    {
-                        return ipAddresses[selection - 1];
-                    }
-                    else if (selection == 0)
+                    if (selection > 0 && selection <= ipAddresses.Count) return ipAddresses[selection - 1];
+                    if (selection == 0)
                     {
                         Console.Write("Please enter the custom server IP address: ");
                         string? customIp = Console.ReadLine();
@@ -99,28 +102,24 @@ namespace CatiaMonitor.Client
                         {
                             return customIp.Trim();
                         }
-                        else
-                        {
-                            Console.WriteLine("Invalid IP address format. Please try again.");
-                        }
+                        else Console.WriteLine("Invalid IP address format. Please try again.");
                     }
-                    else
-                    {
-                        Console.WriteLine("Invalid selection. Please try again.");
-                    }
+                    else Console.WriteLine("Invalid selection. Please try again.");
                 }
-                else
-                {
-                    Console.WriteLine("Invalid input. Please enter a number.");
-                }
+                else Console.WriteLine("Invalid input. Please enter a number.");
             }
         }
 
+        /// <summary>
+        /// <<★★★ 수정된 부분 ★★★>>
+        /// 자동 시작 등록 경로를 확인할 때 "/background" 인자까지 포함하여 정확하게 비교합니다.
+        /// </summary>
         private static void CheckAndCorrectAutoStartRegistration()
         {
             Console.WriteLine("[AutoStart] Checking startup registration...");
             string? registeredPath = AutoStarter.GetRegisteredPath();
-            string expectedPath = $"\"{AutoStarter.ExecutablePath}\"";
+            // 기대하는 경로에 /background 인자 추가
+            string expectedPath = $"\"{AutoStarter.ExecutablePath}\" /background";
 
             if (registeredPath == null)
             {
@@ -140,35 +139,30 @@ namespace CatiaMonitor.Client
 
         private static async Task ConnectAndProcessAsync(string serverIpAddress, int serverPort)
         {
+            // (이전과 동일, 변경 없음)
             using (var client = new TcpClient())
             {
                 Console.WriteLine($"\n[Network] Attempting to connect to {serverIpAddress}:{serverPort}...");
                 await client.ConnectAsync(serverIpAddress, serverPort);
                 Console.WriteLine("[Network] Successfully connected to server.");
-
                 NetworkStream stream = client.GetStream();
-
                 while (client.Connected)
                 {
                     Console.WriteLine("[Network] Waiting for a request from the server...");
                     var buffer = new byte[1024];
                     int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
-
                     if (bytesRead == 0)
                     {
                         Console.WriteLine("[Network] Server closed the connection.");
                         break;
                     }
-
                     string serverRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                     Console.WriteLine($"[Network] Received request: '{serverRequest}'");
-
                     if (serverRequest.Trim().Equals("CHECK_STATUS", StringComparison.OrdinalIgnoreCase))
                     {
                         bool isRunning = StatusChecker.IsCatiaRunning();
                         var response = new { IsCatiaRunning = isRunning };
                         string jsonResponse = JsonSerializer.Serialize(response);
-
                         byte[] dataToSend = Encoding.UTF8.GetBytes(jsonResponse);
                         await stream.WriteAsync(dataToSend, 0, dataToSend.Length);
                         Console.WriteLine($"[Network] Sent response to server: {jsonResponse}");

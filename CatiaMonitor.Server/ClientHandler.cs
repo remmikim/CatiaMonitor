@@ -28,29 +28,31 @@ namespace CatiaMonitor.Server
             Console.WriteLine($"[Connection] Client connected: {_clientIp}");
             NetworkStream stream = _client.GetStream();
 
+            // --- ▼ 해결 방안 적용 ▼ ---
+            // 15초의 읽기 및 쓰기 타임아웃 설정
+            stream.ReadTimeout = 15000;
+            stream.WriteTimeout = 15000;
+            // --- ▲ 해결 방안 적용 ▲ ---
+
             try
             {
                 int clientId = await _dbManager.EnsureClientExists(_clientIp);
                 Console.WriteLine($"[Database] Client ID for {_clientIp} is {clientId}.");
 
-                // 클라이언트가 연결되어 있는 동안 상태 확인을 반복합니다.
                 while (_client.Connected)
                 {
-                    // 1. 클라이언트에게 상태 확인 요청("CHECK_STATUS") 전송
                     Console.WriteLine($"[Request -> {_clientIp}] Sending status check request.");
                     byte[] requestData = Encoding.UTF8.GetBytes("CHECK_STATUS");
                     await stream.WriteAsync(requestData, 0, requestData.Length);
 
-                    // 2. 클라이언트로부터 응답 수신
                     var buffer = new byte[1024];
                     int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
 
-                    if (bytesRead == 0) break; // 클라이언트 연결 끊김
+                    if (bytesRead == 0) break;
 
                     string responseJson = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                     Console.WriteLine($"[Response <- {_clientIp}] Received: {responseJson}");
 
-                    // 3. 수신한 JSON 데이터를 역직렬화하고 DB에 로그 기록
                     try
                     {
                         var status = JsonSerializer.Deserialize<ClientStatus>(responseJson);
@@ -65,13 +67,13 @@ namespace CatiaMonitor.Server
                         Console.WriteLine($"[Error] Failed to parse JSON from {_clientIp}. Details: {jsonEx.Message}");
                     }
 
-                    // 4. 다음 요청 전 1분 대기
                     Console.WriteLine($"[Handler] Waiting 1 minute before next check for {_clientIp}.");
                     await Task.Delay(TimeSpan.FromMinutes(1));
                 }
             }
             catch (IOException ex)
             {
+                // 타임아웃 발생 시 또는 네트워크 문제 발생 시 "Connection lost" 메시지 출력
                 Console.WriteLine($"[Warning] Connection lost for {_clientIp}: {ex.Message}");
             }
             catch (Exception ex)
