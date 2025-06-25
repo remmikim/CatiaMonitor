@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -8,7 +11,6 @@ namespace CatiaMonitor.Client
 {
     public class Program
     {
-        private const string ServerIpAddress = "127.0.0.1";
         private const int ServerPort = 12345;
         private const int ReconnectDelaySeconds = 30;
 
@@ -17,20 +19,100 @@ namespace CatiaMonitor.Client
             Console.Title = "CATIA Monitor Client";
             Console.WriteLine("--- CATIA Monitor Client ---");
 
-            // 자동 시작 등록 상태를 확인하고 필요 시 재등록합니다.
+            // <<<<< 새로운 기능 시작 >>>>>
+            // 1. 자동으로 서버를 찾습니다.
+            string? serverIp = await ServerFinder.DiscoverServerAsync();
+
+            // 2. 서버를 찾지 못한 경우, 사용자에게 수동으로 선택하도록 합니다.
+            if (serverIp == null)
+            {
+                Console.WriteLine("\nCould not find a server automatically. Please select from the list or enter a custom IP.");
+                serverIp = await SelectServerIpAddressAsync();
+            }
+            // <<<<< 새로운 기능 끝 >>>>>
+
+            Console.WriteLine($"[Config] Server IP has been set to: {serverIp}");
+
             CheckAndCorrectAutoStartRegistration();
 
             while (true)
             {
                 try
                 {
-                    await ConnectAndProcessAsync();
+                    await ConnectAndProcessAsync(serverIp, ServerPort);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[Error] Connection failed: {ex.Message}. Retrying in {ReconnectDelaySeconds} seconds.");
+                    Console.WriteLine($"[Error] Connection failed to {serverIp}: {ex.Message}. Retrying in {ReconnectDelaySeconds} seconds.");
                 }
                 await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds));
+            }
+        }
+
+        /// <summary>
+        /// 로컬 네트워크 인터페이스를 스캔하여 사용자에게 서버 IP를 선택하도록 요청하는 메서드입니다.
+        /// (서버 자동 탐지 실패 시에만 호출됩니다.)
+        /// </summary>
+        private static async Task<string> SelectServerIpAddressAsync()
+        {
+            Console.WriteLine("\nSearching for available network interfaces...");
+            var ipAddresses = new List<string> { "127.0.0.1" };
+
+            try
+            {
+                var hostAddresses = await Dns.GetHostAddressesAsync(Dns.GetHostName());
+                foreach (var ip in hostAddresses)
+                {
+                    if (ip.AddressFamily == AddressFamily.InterNetwork && !ipAddresses.Contains(ip.ToString()))
+                    {
+                        ipAddresses.Add(ip.ToString());
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Warning] Could not automatically detect network IP addresses: {ex.Message}");
+            }
+
+            while (true)
+            {
+                Console.WriteLine("\nPlease select the server IP address to connect to:");
+                for (int i = 0; i < ipAddresses.Count; i++)
+                {
+                    Console.WriteLine($"  [{i + 1}] {ipAddresses[i]}");
+                }
+                Console.WriteLine("  [0] Enter a custom IP address");
+                Console.Write("\nEnter your choice: ");
+
+                string? choice = Console.ReadLine();
+                if (int.TryParse(choice, out int selection))
+                {
+                    if (selection > 0 && selection <= ipAddresses.Count)
+                    {
+                        return ipAddresses[selection - 1];
+                    }
+                    else if (selection == 0)
+                    {
+                        Console.Write("Please enter the custom server IP address: ");
+                        string? customIp = Console.ReadLine();
+                        if (!string.IsNullOrWhiteSpace(customIp) && IPAddress.TryParse(customIp.Trim(), out _))
+                        {
+                            return customIp.Trim();
+                        }
+                        else
+                        {
+                            Console.WriteLine("Invalid IP address format. Please try again.");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine("Invalid selection. Please try again.");
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Invalid input. Please enter a number.");
+                }
             }
         }
 
@@ -47,10 +129,7 @@ namespace CatiaMonitor.Client
             }
             else if (!registeredPath.Equals(expectedPath, StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine($"[AutoStart] Registered path is outdated.");
-                Console.WriteLine($"    Old: {registeredPath}");
-                Console.WriteLine($"    New: {expectedPath}");
-                Console.WriteLine($"[AutoStart] Re-registering with correct path...");
+                Console.WriteLine($"[AutoStart] Registered path is outdated. Re-registering...");
                 AutoStarter.RegisterInStartup();
             }
             else
@@ -59,12 +138,12 @@ namespace CatiaMonitor.Client
             }
         }
 
-        private static async Task ConnectAndProcessAsync()
+        private static async Task ConnectAndProcessAsync(string serverIpAddress, int serverPort)
         {
             using (var client = new TcpClient())
             {
-                Console.WriteLine($"[Network] Attempting to connect to {ServerIpAddress}:{ServerPort}...");
-                await client.ConnectAsync(ServerIpAddress, ServerPort);
+                Console.WriteLine($"\n[Network] Attempting to connect to {serverIpAddress}:{serverPort}...");
+                await client.ConnectAsync(serverIpAddress, serverPort);
                 Console.WriteLine("[Network] Successfully connected to server.");
 
                 NetworkStream stream = client.GetStream();
