@@ -5,14 +5,10 @@ namespace CatiaMonitor.Client
 {
     /// <summary>
     /// P/Invoke를 사용하여 콘솔 창의 동작을 제어하는 유틸리티 클래스입니다.
-    /// WinExe 형식에서도 필요 시 콘솔을 생성하는 기능을 포함합니다.
     /// </summary>
     public static class ConsoleManager
     {
         // Windows API 함수를 가져옵니다.
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool AllocConsole(); // ★★★ 새로 추가된 부분 ★★★
-
         [DllImport("kernel32.dll")]
         private static extern IntPtr GetConsoleWindow();
 
@@ -31,18 +27,6 @@ namespace CatiaMonitor.Client
 
         // 콘솔 제어 이벤트를 처리할 델리게이트 정의
         private delegate bool ConsoleCtrlDelegate(int sig);
-
-        /// <summary>
-        /// ★★★ 새로 추가된 메서드 ★★★
-        /// 애플리케이션에 콘솔 창을 할당하여 표시합니다.
-        /// </summary>
-        public static void Show()
-        {
-            if (GetConsoleWindow() == IntPtr.Zero)
-            {
-                AllocConsole();
-            }
-        }
 
         /// <summary>
         /// 콘솔 창을 숨깁니다.
