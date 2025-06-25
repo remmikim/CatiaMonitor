@@ -5,7 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using System.Collections.Concurrent; // 네임스페이스 추가
+using System.Collections.Concurrent;
 
 namespace CatiaMonitor.Server
 {
@@ -16,12 +16,10 @@ namespace CatiaMonitor.Server
         private readonly TcpClient _client;
         private readonly DatabaseManager _dbManager;
         private readonly string _clientIp;
-        // ★★★ 필드 추가 ★★★
         private readonly int _clientId;
         private readonly ConcurrentDictionary<int, ClientHandler> _activeClients;
         private NetworkStream? _stream;
 
-        // ★★★ 생성자 수정 ★★★
         public ClientHandler(TcpClient client, DatabaseManager dbManager, int clientId, ConcurrentDictionary<int, ClientHandler> activeClients)
         {
             _client = client;
@@ -31,14 +29,25 @@ namespace CatiaMonitor.Server
             _activeClients = activeClients;
         }
 
-        // ★★★ 종료 명령을 보내는 새 메서드 ★★★
+        // ★★★ 클라이언트에 종료 명령을 보내는 메서드 ★★★
         public async Task SendShutdownCommandAsync()
         {
             if (_stream != null && _client.Connected)
             {
-                Console.WriteLine($"[Command -> {_clientIp}] Sending SHUTDOWN_CATIA command.");
-                byte[] commandData = Encoding.UTF8.GetBytes("SHUTDOWN_CATIA");
-                await _stream.WriteAsync(commandData, 0, commandData.Length);
+                try
+                {
+                    Console.WriteLine($"[Command -> {_clientIp}] Sending SHUTDOWN_CATIA command.");
+                    byte[] commandData = Encoding.UTF8.GetBytes("SHUTDOWN_CATIA");
+                    await _stream.WriteAsync(commandData, 0, commandData.Length);
+                }
+                catch (IOException ex)
+                {
+                    Console.WriteLine($"[Error] Failed to send shutdown command to {_clientIp}: {ex.Message}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"[Warning] Cannot send shutdown command. Client {_clientIp} is not connected.");
             }
         }
 
@@ -51,8 +60,6 @@ namespace CatiaMonitor.Server
 
             try
             {
-                // ClientHandler 생성 시점에 이미 EnsureClientExists가 호출되었으므로 여기서는 생략
-
                 while (_client.Connected)
                 {
                     Console.WriteLine($"[Request -> {_clientIp}] Sending status check request.");
@@ -94,7 +101,7 @@ namespace CatiaMonitor.Server
             }
             finally
             {
-                // ★★★ 활성 클라이언트 목록에서 자신을 제거 ★★★
+                // 활성 클라이언트 목록에서 자신을 제거
                 _activeClients.TryRemove(_clientId, out _);
                 _client.Close();
                 Console.WriteLine($"[Connection] Client disconnected: {_clientIp} (ID: {_clientId}). Active clients: {_activeClients.Count}");

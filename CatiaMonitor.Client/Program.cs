@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq; // ★★★ 오류 해결을 위해 이 줄을 추가했습니다 ★★★
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -13,46 +13,20 @@ namespace CatiaMonitor.Client
     {
         private const int ServerPort = 12345;
         private const int ReconnectDelaySeconds = 30;
-<<<<<<< HEAD
-
-        // 콘솔 창이 보이는지 여부를 저장하는 정적 플래그
-        private static bool s_isConsoleVisible = false;
-
-        /// <summary>
-        /// 콘솔이 보일 때만 메시지를 출력하는 래퍼 메서드입니다.
-        /// </summary>
-        /// <param name="message">출력할 메시지</param>
-        private static void Log(string message)
-        {
-            if (s_isConsoleVisible)
-            {
-                Console.WriteLine(message);
-            }
-        }
 
         public static async Task Main(string[] args)
         {
-            // 프로그램 인자에 "/background"가 있는지 확인하여 백그라운드 실행 여부 결정
-            bool runInBackground = args.Contains("/background", StringComparison.OrdinalIgnoreCase);
-
-            // 백그라운드 모드가 아닐 경우에만 콘솔 창을 생성하고 설정합니다.
-            if (!runInBackground)
-=======
-
-        public static async Task Main(string[] args)
-        {
-            // <<★★★ 새로운 기능 시작 ★★★>>
-            // 1. 닫기 버튼을 눌렀을 때 숨겨지도록 핸들러를 설정합니다.
+            // ★★★ 시작 인자 및 콘솔 관리 로직 개선 ★★★
+            // 닫기 버튼을 눌렀을 때 숨겨지도록 핸들러를 설정합니다.
             ConsoleManager.SetupCloseHandler();
 
-            // 2. 프로그램 인자에 "/background"가 있으면 콘솔 창을 즉시 숨깁니다.
-            if (args.Contains("/background", StringComparer.OrdinalIgnoreCase))
->>>>>>> parent of c80dd6d (클라이언트 앱 수정)
+            // 프로그램 인자에 "/background"가 있으면 콘솔 창을 즉시 숨깁니다.
+            bool runInBackground = args.Contains("/background", StringComparer.OrdinalIgnoreCase);
+            if (runInBackground)
             {
-                Console.WriteLine("[Info] Starting in background mode.");
+                Console.WriteLine("[Info] Starting in background mode and hiding console.");
                 ConsoleManager.Hide();
             }
-            // <<★★★ 새로운 기능 끝 ★★★>>
 
             Console.Title = "CATIA Monitor Client";
             Console.WriteLine("--- CATIA Monitor Client ---");
@@ -66,20 +40,9 @@ namespace CatiaMonitor.Client
 
             if (serverIp == null)
             {
-<<<<<<< HEAD
-                if (runInBackground)
-                {
-                    serverIp = "127.0.0.1";
-                }
-                else
-                {
-                    Log("\n[Discovery] Could not find a server automatically. Please select an IP address.");
-                    serverIp = await SelectServerIpAddressAsync();
-                }
-=======
-                Console.WriteLine("\nCould not find a server automatically. Please select from the list or enter a custom IP.");
-                serverIp = await SelectServerIpAddressAsync();
->>>>>>> parent of c80dd6d (클라이언트 앱 수정)
+                Console.WriteLine("\n[Discovery] Could not find a server automatically. Please select an IP address manually.");
+                // 백그라운드 모드에서 서버를 찾지 못하면 루프백을 기본값으로 사용
+                serverIp = runInBackground ? "127.0.0.1" : await SelectServerIpAddressAsync();
             }
 
             Console.WriteLine($"[Config] Server IP has been set to: {serverIp}");
@@ -102,19 +65,9 @@ namespace CatiaMonitor.Client
             }
         }
 
-<<<<<<< HEAD
-        /// <summary>
-        /// 사용자가 서버 IP 주소를 수동으로 선택하거나 입력하도록 안내합니다.
-        /// </summary>
         private static async Task<string> SelectServerIpAddressAsync()
         {
-            Log("\n[Network] Searching for available network interfaces...");
-=======
-        private static async Task<string> SelectServerIpAddressAsync()
-        {
-            // (이전과 동일, 변경 없음)
-            Console.WriteLine("\nSearching for available network interfaces...");
->>>>>>> parent of c80dd6d (클라이언트 앱 수정)
+            Console.WriteLine("\n[Network] Searching for available network interfaces...");
             var ipAddresses = new List<string> { "127.0.0.1" };
             try
             {
@@ -138,11 +91,7 @@ namespace CatiaMonitor.Client
                 {
                     Console.WriteLine($"  [{i + 1}] {ipAddresses[i]}");
                 }
-<<<<<<< HEAD
-                Log("  [0] Enter a custom IP address");
-=======
                 Console.WriteLine("  [0] Enter a custom IP address");
->>>>>>> parent of c80dd6d (클라이언트 앱 수정)
                 Console.Write("\nEnter your choice: ");
                 string? choice = Console.ReadLine();
                 if (int.TryParse(choice, out int selection))
@@ -164,14 +113,6 @@ namespace CatiaMonitor.Client
             }
         }
 
-        /// <summary>
-<<<<<<< HEAD
-        /// Windows 시작프로그램 레지스트리 등록 상태를 확인하고, 경로가 다르거나 없으면 새로 등록합니다.
-=======
-        /// <<★★★ 수정된 부분 ★★★>>
-        /// 자동 시작 등록 경로를 확인할 때 "/background" 인자까지 포함하여 정확하게 비교합니다.
->>>>>>> parent of c80dd6d (클라이언트 앱 수정)
-        /// </summary>
         private static void CheckAndCorrectAutoStartRegistration()
         {
             Console.WriteLine("[AutoStart] Checking startup registration...");
@@ -186,7 +127,7 @@ namespace CatiaMonitor.Client
             }
             else if (!registeredPath.Equals(expectedPath, StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine($"[AutoStart] Registered path is outdated. Re-registering...");
+                Console.WriteLine($"[AutoStart] Registered path is outdated. Re-registering with new path: {expectedPath}");
                 AutoStarter.RegisterInStartup();
             }
             else
@@ -195,12 +136,8 @@ namespace CatiaMonitor.Client
             }
         }
 
-        /// <summary>
-        /// 서버에 연결하고, 서버로부터 오는 요청을 처리하는 메인 통신 로직입니다.
-        /// </summary>
         private static async Task ConnectAndProcessAsync(string serverIpAddress, int serverPort)
         {
-            // (이전과 동일, 변경 없음)
             using (var client = new TcpClient())
             {
                 Console.WriteLine($"\n[Network] Attempting to connect to {serverIpAddress}:{serverPort}...");
@@ -218,16 +155,11 @@ namespace CatiaMonitor.Client
                         Console.WriteLine("[Network] Server closed the connection.");
                         break;
                     }
-<<<<<<< HEAD
                     string serverRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead).Trim();
-                    Log($"[Network] Received request: '{serverRequest}'");
-
-                    if (serverRequest.Equals("CHECK_STATUS", StringComparison.OrdinalIgnoreCase))
-=======
-                    string serverRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                     Console.WriteLine($"[Network] Received request: '{serverRequest}'");
-                    if (serverRequest.Trim().Equals("CHECK_STATUS", StringComparison.OrdinalIgnoreCase))
->>>>>>> parent of c80dd6d (클라이언트 앱 수정)
+
+                    // ★★★ 서버로부터 받은 메시지에 따라 분기 처리 ★★★
+                    if (serverRequest.Equals("CHECK_STATUS", StringComparison.OrdinalIgnoreCase))
                     {
                         bool isRunning = StatusChecker.IsCatiaRunning();
                         var response = new { IsCatiaRunning = isRunning };
@@ -238,15 +170,11 @@ namespace CatiaMonitor.Client
                     }
                     else if (serverRequest.Equals("SHUTDOWN_CATIA", StringComparison.OrdinalIgnoreCase))
                     {
-                        Log("[Action] Received a command from the server to shut down CATIA.");
+                        Console.WriteLine("[Action] Received a command from the server to shut down CATIA.");
                         StatusChecker.TerminateCatiaProcess();
                     }
                 }
             }
         }
     }
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> parent of c80dd6d (클라이언트 앱 수정)

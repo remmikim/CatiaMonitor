@@ -2,7 +2,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
-using System.Collections.Concurrent; // 네임스페이스 추가
+using System.Collections.Concurrent;
 
 namespace CatiaMonitor.Server
 {
@@ -11,7 +11,7 @@ namespace CatiaMonitor.Server
         private const int TcpPort = 12345;
         private const string HttpUrl = "http://+:8080/";
 
-        // ★★★ 활성 클라이언트를 저장할 스레드 안전한 딕셔너리 추가 ★★★
+        // 활성 클라이언트를 저장할 스레드 안전한 딕셔너리
         private static readonly ConcurrentDictionary<int, ClientHandler> s_activeClients = new();
 
         static async Task Main(string[] args)
@@ -22,7 +22,7 @@ namespace CatiaMonitor.Server
             var dbManager = new DatabaseManager("catia_monitor.db");
             await dbManager.InitializeDatabaseAsync();
 
-            // ★★★ WebServer에 딕셔너리 인스턴스를 전달 ★★★
+            // WebServer에 딕셔너리 인스턴스를 전달
             var webServer = new WebServer(HttpUrl, dbManager, s_activeClients);
             _ = Task.Run(webServer.Run); // 웹 서버를 백그라운드에서 실행
 
@@ -36,7 +36,7 @@ namespace CatiaMonitor.Server
                 {
                     TcpClient client = await tcpListener.AcceptTcpClientAsync();
 
-                    // ★★★ 클라이언트 핸들러를 생성하기 전에 DB에서 ID를 먼저 확보하고 딕셔너리에 추가 ★★★
+                    // 클라이언트 핸들러를 생성하기 전에 DB에서 ID를 먼저 확보하고 딕셔너리에 추가
                     _ = Task.Run(async () => {
                         string clientIp = ((IPEndPoint?)client.Client.RemoteEndPoint)?.Address.ToString() ?? "Unknown";
                         int clientId = await dbManager.EnsureClientExists(clientIp);

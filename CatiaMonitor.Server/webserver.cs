@@ -4,7 +4,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using System.Collections.Concurrent; // 네임스페이스 추가
+using System.Collections.Concurrent;
 
 namespace CatiaMonitor.Server
 {
@@ -12,10 +12,8 @@ namespace CatiaMonitor.Server
     {
         private readonly HttpListener _listener;
         private readonly DatabaseManager _dbManager;
-        // ★★★ 활성 클라이언트 목록을 참조하기 위한 필드 추가 ★★★
         private readonly ConcurrentDictionary<int, ClientHandler> _activeClients;
 
-        // ★★★ 생성자에서 activeClients를 받도록 수정 ★★★
         public WebServer(string url, DatabaseManager dbManager, ConcurrentDictionary<int, ClientHandler> activeClients)
         {
             _listener = new HttpListener();
@@ -27,85 +25,102 @@ namespace CatiaMonitor.Server
         public async Task Run()
         {
             _listener.Start();
-            Console.WriteLine("[Web Server] Started and listening for requests.");
+            Console.WriteLine($"[Web Server] Started. Listening on {_listener.Prefixes.First()}");
 
             while (true)
             {
-                var context = await _listener.GetContextAsync();
-                var request = context.Request;
-                var response = context.Response;
-
                 try
                 {
-                    switch (request.Url?.AbsolutePath)
-                    {
-                        case "/api/status":
-                            await HandleStatusRequest(response);
-                            break;
-                        // ★★★ '/api/shutdown' 경로에 대한 처리 추가 ★★★
-                        case "/api/shutdown":
-                            if (request.HttpMethod == "POST")
-                            {
-                                await HandleShutdownRequest(request, response);
-                            }
-                            else
-                            {
-                                SendResponse(response, HttpStatusCode.MethodNotAllowed);
-                            }
-                            break;
-                        default:
-                            if (request.Url?.AbsolutePath == "/" || request.Url?.AbsolutePath?.EndsWith("index.html") == true)
-                            {
-                                await HandleFileRequest(response, "dashboard/index.html");
-                            }
-                            else
-                            {
-                                SendResponse(response, HttpStatusCode.NotFound);
-                            }
-                            break;
-                    }
+                    var context = await _listener.GetContextAsync();
+                    await ProcessRequestAsync(context);
+                }
+                catch (HttpListenerException ex) when (ex.ErrorCode == 995)
+                {
+                    Console.WriteLine("[Web Server] Listener is shutting down.");
+                    break;
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[Web Server] Error processing request: {ex.Message}");
-                    try
-                    {
-                        SendResponse(response, HttpStatusCode.InternalServerError);
-                    }
-                    catch (Exception innerEx)
-                    {
-                        Console.WriteLine($"[Web Server] Critical error: Could not send error response. {innerEx.Message}");
-                    }
                 }
-                finally
+            }
+        }
+
+        private async Task ProcessRequestAsync(HttpListenerContext context)
+        {
+            var request = context.Request;
+            var response = context.Response;
+
+            try
+            {
+                switch (request.Url?.AbsolutePath)
                 {
-                    response.Close();
+                    case "/api/status":
+                        await HandleStatusRequest(response);
+                        break;
+                    // ★★★ '/api/shutdown' 경로에 대한 처리 ★★★
+                    case "/api/shutdown":
+                        if (request.HttpMethod == "POST")
+                        {
+                            await HandleShutdownRequest(request, response);
+                        }
+                        else
+                        {
+                            SendResponse(response, HttpStatusCode.MethodNotAllowed);
+                        }
+                        break;
+                    case "/":
+                    case "/index.html":
+                        await HandleFileRequest(response, "dashboard/index.html", "text/html; charset=utf-8");
+                        break;
+                    default:
+                        SendResponse(response, HttpStatusCode.NotFound);
+                        break;
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Web Server] Error handling request for {request.Url}: {ex.Message}");
+                if (!response.OutputStream.CanWrite) return;
+                try
+                {
+                    SendResponse(response, HttpStatusCode.InternalServerError);
+                }
+                catch (Exception innerEx)
+                {
+                    Console.WriteLine($"[Web Server] Critical error: Could not send error response. {innerEx.Message}");
+                }
+            }
+            finally
+            {
+                response.Close();
             }
         }
 
         private async Task HandleStatusRequest(HttpListenerResponse response)
         {
             var summary = await _dbManager.GetClientStatusSummaryAsync();
-            var json = JsonSerializer.Serialize(summary);
+            var options = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            var json = JsonSerializer.Serialize(summary, options);
             SendResponse(response, HttpStatusCode.OK, "application/json", json);
         }
 
-        private async Task HandleFileRequest(HttpListenerResponse response, string filePath)
+        private async Task HandleFileRequest(HttpListenerResponse response, string filePath, string mimeType)
         {
-            if (File.Exists(filePath))
+            string fullPath = Path.Combine(AppContext.BaseDirectory, filePath);
+            if (File.Exists(fullPath))
             {
-                var content = await File.ReadAllBytesAsync(filePath);
-                var mimeType = "text/html; charset=utf-8";
-                SendResponse(response, HttpStatusCode.OK, mimeType, Encoding.UTF8.GetString(content));
+                var content = await File.ReadAllBytesAsync(fullPath);
+                SendResponse(response, HttpStatusCode.OK, mimeType, content);
             }
             else
             {
+                Console.WriteLine($"[Web Server] File not found: {fullPath}");
                 SendResponse(response, HttpStatusCode.NotFound);
             }
         }
 
-        // ★★★ 종료 요청을 처리하는 새 메서드 추가 ★★★
+        // ★★★ 종료 요청을 처리하는 메서드 ★★★
         private async Task HandleShutdownRequest(HttpListenerRequest request, HttpListenerResponse response)
         {
             try
@@ -143,11 +158,15 @@ namespace CatiaMonitor.Server
 
         private void SendResponse(HttpListenerResponse response, HttpStatusCode statusCode, string contentType = "text/plain", string content = "")
         {
+            SendResponse(response, statusCode, contentType, Encoding.UTF8.GetBytes(content));
+        }
+
+        private void SendResponse(HttpListenerResponse response, HttpStatusCode statusCode, string contentType, byte[] content)
+        {
             response.StatusCode = (int)statusCode;
             response.ContentType = contentType;
-            byte[] buffer = Encoding.UTF8.GetBytes(content);
-            response.ContentLength64 = buffer.Length;
-            response.OutputStream.Write(buffer, 0, buffer.Length);
+            response.ContentLength64 = content.Length;
+            response.OutputStream.Write(content, 0, content.Length);
         }
     }
 }
