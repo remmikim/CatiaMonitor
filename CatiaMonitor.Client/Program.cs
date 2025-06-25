@@ -13,37 +13,51 @@ namespace CatiaMonitor.Client
     {
         private const int ServerPort = 12345;
         private const int ReconnectDelaySeconds = 30;
+        private static bool s_isConsoleVisible = false;
+
+        private static void Log(string message)
+        {
+            if (s_isConsoleVisible)
+            {
+                Console.WriteLine(message);
+            }
+            // 향후 파일 로그 등을 추가할 수 있습니다.
+        }
 
         public static async Task Main(string[] args)
         {
-            // <<★★★ 새로운 기능 시작 ★★★>>
-            // 1. 닫기 버튼을 눌렀을 때 숨겨지도록 핸들러를 설정합니다.
-            ConsoleManager.SetupCloseHandler();
+            bool runInBackground = args.Contains("/background", StringComparer.OrdinalIgnoreCase);
 
-            // 2. 프로그램 인자에 "/background"가 있으면 콘솔 창을 즉시 숨깁니다.
-            if (args.Contains("/background", StringComparer.OrdinalIgnoreCase))
+            if (!runInBackground)
             {
-                Console.WriteLine("[Info] Starting in background mode.");
-                ConsoleManager.Hide();
-            }
-            // <<★★★ 새로운 기능 끝 ★★★>>
+                ConsoleManager.Show();
+                s_isConsoleVisible = true;
+                ConsoleManager.SetupCloseHandler();
 
-            Console.Title = "CATIA Monitor Client";
-            Console.WriteLine("--- CATIA Monitor Client ---");
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("\n[Info] 이 콘솔 창의 닫기(X) 버튼을 눌러도 프로그램은 종료되지 않고 백그라운드에서 계속 실행됩니다.");
-            Console.WriteLine("[Info] 프로그램을 완전히 종료하려면 작업 관리자에서 'CatiaMonitor.Client.exe' 프로세스를 직접 종료해야 합니다.");
-            Console.ResetColor();
+                Console.Title = "CATIA Monitor Client";
+                Log("--- CATIA Monitor Client ---");
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Log("\n[Info] 이 콘솔 창의 닫기(X) 버튼을 눌러도 프로그램은 종료되지 않고 백그라운드에서 계속 실행됩니다.");
+                Log("[Info] 프로그램을 완전히 종료하려면 작업 관리자에서 'CatiaMonitor.Client.exe' 프로세스를 직접 종료해야 합니다.");
+                Console.ResetColor();
+            }
 
             string? serverIp = await ServerFinder.DiscoverServerAsync();
 
             if (serverIp == null)
             {
-                Console.WriteLine("\nCould not find a server automatically. Please select from the list or enter a custom IP.");
-                serverIp = await SelectServerIpAddressAsync();
+                if (runInBackground)
+                {
+                    serverIp = "127.0.0.1"; // 백그라운드 모드이고 서버를 못 찾으면 localhost로 기본 설정
+                }
+                else
+                {
+                    Log("\nCould not find a server automatically. Please select from the list or enter a custom IP.");
+                    serverIp = await SelectServerIpAddressAsync();
+                }
             }
 
-            Console.WriteLine($"[Config] Server IP has been set to: {serverIp}");
+            Log($"[Config] Server IP has been set to: {serverIp}");
 
             CheckAndCorrectAutoStartRegistration();
 
@@ -55,16 +69,19 @@ namespace CatiaMonitor.Client
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[Error] Connection failed to {serverIp}: {ex.Message}. Retrying in {ReconnectDelaySeconds} seconds.");
+                    Log($"[Error] Connection failed to {serverIp}: {ex.Message}. Retrying in {ReconnectDelaySeconds} seconds.");
                 }
                 await Task.Delay(TimeSpan.FromSeconds(ReconnectDelaySeconds));
             }
         }
 
+        // SelectServerIpAddressAsync와 CheckAndCorrectAutoStartRegistration, ConnectAndProcessAsync 내부의
+        // Console.WriteLine() 호출도 모두 Log()로 변경해야 합니다.
+        // 편의를 위해 아래에 수정된 전체 메서드를 제공합니다.
+
         private static async Task<string> SelectServerIpAddressAsync()
         {
-            // (이전과 동일, 변경 없음)
-            Console.WriteLine("\nSearching for available network interfaces...");
+            Log("\nSearching for available network interfaces...");
             var ipAddresses = new List<string> { "127.0.0.1" };
             try
             {
@@ -79,17 +96,17 @@ namespace CatiaMonitor.Client
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Warning] Could not automatically detect network IP addresses: {ex.Message}");
+                Log($"[Warning] Could not automatically detect network IP addresses: {ex.Message}");
             }
             while (true)
             {
-                Console.WriteLine("\nPlease select the server IP address to connect to:");
+                Log("\nPlease select the server IP address to connect to:");
                 for (int i = 0; i < ipAddresses.Count; i++)
                 {
-                    Console.WriteLine($"  [{i + 1}] {ipAddresses[i]}");
+                    Log($"  [{i + 1}] {ipAddresses[i]}");
                 }
-                Console.WriteLine("  [0] Enter a custom IP address");
-                Console.Write("\nEnter your choice: ");
+                Log("  [0] Enter a custom IP address");
+                Console.Write("\nEnter your choice: "); // 사용자 입력 프롬프트는 그대로 둠
                 string? choice = Console.ReadLine();
                 if (int.TryParse(choice, out int selection))
                 {
@@ -102,73 +119,71 @@ namespace CatiaMonitor.Client
                         {
                             return customIp.Trim();
                         }
-                        else Console.WriteLine("Invalid IP address format. Please try again.");
+                        else Log("Invalid IP address format. Please try again.");
                     }
-                    else Console.WriteLine("Invalid selection. Please try again.");
+                    else Log("Invalid selection. Please try again.");
                 }
-                else Console.WriteLine("Invalid input. Please enter a number.");
+                else Log("Invalid input. Please enter a number.");
             }
         }
 
-        /// <summary>
-        /// <<★★★ 수정된 부분 ★★★>>
-        /// 자동 시작 등록 경로를 확인할 때 "/background" 인자까지 포함하여 정확하게 비교합니다.
-        /// </summary>
         private static void CheckAndCorrectAutoStartRegistration()
         {
-            Console.WriteLine("[AutoStart] Checking startup registration...");
+            Log("[AutoStart] Checking startup registration...");
             string? registeredPath = AutoStarter.GetRegisteredPath();
-            // 기대하는 경로에 /background 인자 추가
             string expectedPath = $"\"{AutoStarter.ExecutablePath}\" /background";
 
             if (registeredPath == null)
             {
-                Console.WriteLine("[AutoStart] Not registered for startup. Registering now...");
+                Log("[AutoStart] Not registered for startup. Registering now...");
                 AutoStarter.RegisterInStartup();
             }
             else if (!registeredPath.Equals(expectedPath, StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine($"[AutoStart] Registered path is outdated. Re-registering...");
+                Log($"[AutoStart] Registered path is outdated. Re-registering...");
                 AutoStarter.RegisterInStartup();
             }
             else
             {
-                Console.WriteLine("[AutoStart] Already registered correctly.");
+                Log("[AutoStart] Already registered correctly.");
             }
         }
 
         private static async Task ConnectAndProcessAsync(string serverIpAddress, int serverPort)
         {
-            // (이전과 동일, 변경 없음)
             using (var client = new TcpClient())
             {
-                Console.WriteLine($"\n[Network] Attempting to connect to {serverIpAddress}:{serverPort}...");
+                Log($"\n[Network] Attempting to connect to {serverIpAddress}:{serverPort}...");
                 await client.ConnectAsync(serverIpAddress, serverPort);
-                Console.WriteLine("[Network] Successfully connected to server.");
+                Log("[Network] Successfully connected to server.");
                 NetworkStream stream = client.GetStream();
                 while (client.Connected)
                 {
-                    Console.WriteLine("[Network] Waiting for a request from the server...");
+                    Log("[Network] Waiting for a request from the server...");
                     var buffer = new byte[1024];
                     int bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
                     if (bytesRead == 0)
                     {
-                        Console.WriteLine("[Network] Server closed the connection.");
+                        Log("[Network] Server closed the connection.");
                         break;
                     }
                     string serverRequest = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                    Console.WriteLine($"[Network] Received request: '{serverRequest}'");
+                    Log($"[Network] Received request: '{serverRequest}'");
                     if (serverRequest.Trim().Equals("CHECK_STATUS", StringComparison.OrdinalIgnoreCase))
                     {
-                        bool isRunning = StatusChecker.IsCatiaRunning();
+                        bool isRunning = StatusChecker.IsCatiaRunning(); // IsCatiaRunning 내부의 로그도 수정 필요
                         var response = new { IsCatiaRunning = isRunning };
                         string jsonResponse = JsonSerializer.Serialize(response);
                         byte[] dataToSend = Encoding.UTF8.GetBytes(jsonResponse);
                         await stream.WriteAsync(dataToSend, 0, dataToSend.Length);
-                        Console.WriteLine($"[Network] Sent response to server: {jsonResponse}");
+                        Log($"[Network] Sent response to server: {jsonResponse}");
                     }
                 }
             }
         }
     }
 }
+
+// 참고: StatusChecker.cs, AutoStarter.cs 등 다른 파일의 Console.WriteLine도
+// 위와 같은 방식으로 Log() 메서드를 사용하도록 수정해주시면 좋습니다.
+// 하지만 Program.cs만 수정해도 핵심 기능은 정상적으로 동작합니다.
