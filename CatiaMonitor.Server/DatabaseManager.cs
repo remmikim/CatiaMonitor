@@ -126,6 +126,8 @@ namespace CatiaMonitor.Server
         /// Gets the latest status summary for all clients for the web dashboard.
         /// </summary>
         /// <returns>A list of client status summaries. 클라이언트 상태 요약 정보 리스트를 반환합니다.</returns>
+        // CatiaMonitor.Server/DatabaseManager.cs
+
         public async Task<List<ClientStatusSummary>> GetClientStatusSummaryAsync()
         {
             var summaryList = new List<ClientStatusSummary>();
@@ -135,19 +137,19 @@ namespace CatiaMonitor.Server
                 // 각 ClientId 별로 가장 최근의 LogId를 찾는 서브쿼리를 사용하여
                 // 클라이언트 정보와 최신 로그를 조합(LEFT JOIN)합니다.
                 var commandText = @"
-                    SELECT 
-                        c.ClientId, 
-                        c.IpAddress, 
-                        c.LastSeen, 
-                        ul.IsCatiaRunning, 
-                        ul.Timestamp as LastLogTime
-                    FROM Clients c
-                    LEFT JOIN UsageLogs ul ON ul.LogId = (
-                        SELECT MAX(LogId) 
-                        FROM UsageLogs 
-                        WHERE ClientId = c.ClientId
-                    )
-                    ORDER BY c.IpAddress";
+            SELECT 
+                c.ClientId, 
+                c.IpAddress, 
+                c.LastSeen, 
+                ul.IsCatiaRunning, 
+                ul.Timestamp as LastLogTime
+            FROM Clients c
+            LEFT JOIN UsageLogs ul ON ul.LogId = (
+                SELECT MAX(LogId) 
+                FROM UsageLogs 
+                WHERE ClientId = c.ClientId
+            )
+            ORDER BY c.IpAddress";
 
                 var command = new SqliteCommand(commandText, connection);
                 using (var reader = await command.ExecuteReaderAsync())
